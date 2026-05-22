@@ -140,6 +140,20 @@ textarea.form-input { resize: vertical; min-height: 72px; }
 .date-warn { color: #c62828; font-weight: 600; }
 .date-near { color: #856404; font-weight: 600; }
 .sql-box { background: #1a1a1a; color: #e0e0e0; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 12px; white-space: pre; overflow-x: auto; margin-top: 12px; }
+.modal-xl { width: 98vw; max-width: 1480px; }
+.ord-items-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ord-items-tbl th { background: #f5f7fa; padding: 6px 5px; text-align: left; font-size: 10px; font-weight: 600; color: #666; border-bottom: 1px solid #e5e5e3; white-space: nowrap; }
+.ord-items-tbl td { padding: 3px 3px; border-bottom: 1px solid #f0f0ef; vertical-align: middle; }
+.ord-items-tbl input, .ord-items-tbl select { padding: 4px 5px; border: 1px solid #e5e5e3; border-radius: 4px; font-size: 11px; background: #fff; font-family: inherit; width: 100%; }
+.ord-items-tbl input:focus, .ord-items-tbl select:focus { outline: none; border-color: #1a6db5; }
+.ord-auto-cell { background: #f0f5ff; color: #1a6db5; font-weight: 600; font-size: 11px; text-align: right; padding: 4px 5px; white-space: nowrap; }
+.ord-bo-cell { background: #fff8f0; color: #c62828; font-weight: 600; font-size: 11px; text-align: right; padding: 4px 5px; }
+.container-plan { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+.container-card { border: 2px solid #e5e5e3; border-radius: 8px; padding: 10px 12px; text-align: center; cursor: pointer; }
+.container-card.best { border-color: #1a6db5; background: #f0f5ff; }
+.container-fill { height: 7px; background: #f0f0ef; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.container-fill-bar { height: 100%; border-radius: 4px; }
+.bo-badge { background: #fff3cd; color: #856404; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -396,11 +410,12 @@ textarea.form-input { resize: vertical; min-height: 72px; }
 
       <!-- 수주 등록 -->
       <div id="page-order" style="display:none;">
-        <div class="stats-row">
+        <div class="stats-row" style="grid-template-columns:repeat(5,1fr);">
           <div class="stat-card"><div class="stat-label">전체 수주</div><div class="stat-value" id="ord-stat-total">0</div><div class="stat-sub">건</div></div>
           <div class="stat-card"><div class="stat-label">수주 확인</div><div class="stat-value" id="ord-stat-confirmed">0</div><div class="stat-sub">건</div></div>
           <div class="stat-card"><div class="stat-label">생산중</div><div class="stat-value" id="ord-stat-production">0</div><div class="stat-sub">건</div></div>
           <div class="stat-card"><div class="stat-label">납기 7일 이내</div><div class="stat-value" id="ord-stat-deadline" style="color:#c62828;">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">백오더 품목</div><div class="stat-value" id="ord-stat-backorder" style="color:#856404;">0</div><div class="stat-sub">건</div></div>
         </div>
         <div class="section">
           <div class="section-header">
@@ -421,9 +436,23 @@ textarea.form-input { resize: vertical; min-height: 72px; }
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>수주번호</th><th>바이어 PO#</th><th>거래처</th><th>견적번호</th><th>수주일</th><th>납기일</th><th>총액</th><th>결제조건</th><th>L/C</th><th>상태</th><th>관리</th></tr></thead>
-              <tbody id="order-list"><tr class="empty-row"><td colspan="11">연결 중...</td></tr></tbody>
+              <thead><tr><th>수주번호</th><th>바이어 PO#</th><th>거래처</th><th>견적번호</th><th>수주일</th><th>납기일</th><th>총액</th><th>총CBM</th><th>결제조건</th><th>L/C</th><th>백오더</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="order-list"><tr class="empty-row"><td colspan="13">연결 중...</td></tr></tbody>
             </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="toggleBoSection()">
+            <span class="section-title">📦 백오더 현황</span>
+            <span id="bo-toggle-label" style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="bo-section-wrap" style="display:none;">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>수주번호</th><th>거래처</th><th>품목명</th><th>HS Code</th><th>주문수량</th><th>선적수량</th><th>백오더</th><th>단가</th><th>백오더 금액</th><th>납기일</th><th>관리</th></tr></thead>
+                <tbody id="bo-list"><tr class="empty-row"><td colspan="11">백오더 없음</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </div>
         <div class="section">
@@ -442,6 +471,8 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   delivery_date DATE,
   currency TEXT DEFAULT 'USD',
   total_amount NUMERIC DEFAULT 0,
+  total_cbm NUMERIC DEFAULT 0,
+  total_gross_weight NUMERIC DEFAULT 0,
   incoterms TEXT,
   payment_terms TEXT,
   lc_required BOOLEAN DEFAULT FALSE,
@@ -453,6 +484,32 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE order_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id),
+  product_name TEXT NOT NULL,
+  hs_code TEXT,
+  quantity NUMERIC NOT NULL DEFAULT 0,
+  unit TEXT DEFAULT 'PCS',
+  unit_price NUMERIC DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  amount NUMERIC DEFAULT 0,
+  length_cm NUMERIC,
+  width_cm NUMERIC,
+  height_cm NUMERIC,
+  cbm_per_unit NUMERIC DEFAULT 0,
+  total_cbm NUMERIC DEFAULT 0,
+  gross_weight_kg NUMERIC DEFAULT 0,
+  net_weight_kg NUMERIC DEFAULT 0,
+  shipped_quantity NUMERIC DEFAULT 0,
+  backorder_quantity NUMERIC DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  notes TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );</div>
           </div>
         </div>
