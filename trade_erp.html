@@ -196,6 +196,11 @@ textarea.form-input { resize: vertical; min-height: 72px; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         대금 회수 <span class="badge" id="nav-payment-badge" style="background:#c62828;">0</span>
       </div>
+      <div class="nav-section">사후 관리</div>
+      <div class="nav-item" id="nav-claim" onclick="showPage('claim',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        클레임 관리 <span class="badge" id="nav-claim-badge" style="background:#856404;">0</span>
+      </div>
       <div class="nav-section">분석</div>
       <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>대시보드 <span class="soon">준비중</span></div>
     </div>
@@ -649,6 +654,70 @@ textarea.form-input { resize: vertical; min-height: 72px; }
       </div>
     </div>
   </div>
+
+      <!-- 클레임 관리 -->
+      <div id="page-claim" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">전체 클레임</div><div class="stat-value" id="cl-stat-total">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">처리중</div><div class="stat-value" id="cl-stat-open" style="color:#856404;">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">해결 완료</div><div class="stat-value" id="cl-stat-resolved">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">재구매 예정</div><div class="stat-value" id="cl-stat-repurchase" style="color:#1a6db5;">0</div><div class="stat-sub">건</div></div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">클레임 목록</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select class="form-input" id="cl-filter-status" onchange="loadClaims()" style="font-size:12px;padding:5px 10px;width:auto;">
+                <option value="">전체 상태</option>
+                <option value="open">접수</option>
+                <option value="investigating">조사중</option>
+                <option value="resolved">해결완료</option>
+                <option value="closed">종결</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="openClaimModal()">+ 클레임 등록</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>클레임번호</th><th>거래처</th><th>수주번호</th><th>유형</th><th>클레임일</th><th>내용 요약</th><th>클레임 금액</th><th>RMA</th><th>재구매 예정</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="claim-list"><tr class="empty-row"><td colspan="11">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="toggleClaimSqlBox()">
+            <span class="section-title">📋 Supabase 테이블 생성 SQL</span>
+            <span style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="claim-sql-box-wrap" style="display:none;padding:16px 20px;">
+            <div class="sql-box">CREATE TABLE claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_number TEXT UNIQUE,
+  order_id UUID REFERENCES orders(id),
+  shipment_id UUID REFERENCES shipments(id),
+  company_id UUID REFERENCES companies(id),
+  claim_date DATE,
+  claim_type TEXT,
+  description TEXT,
+  quantity NUMERIC,
+  amount NUMERIC,
+  currency TEXT DEFAULT 'USD',
+  rma_number TEXT,
+  rma_date DATE,
+  resolution TEXT,
+  resolved_date DATE,
+  buyer_feedback TEXT,
+  repurchase_expected DATE,
+  status TEXT DEFAULT 'open',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- 문의 등록 모달 -->
@@ -919,6 +988,120 @@ textarea.form-input { resize: vertical; min-height: 72px; }
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('quotation-modal')">취소</button>
       <button class="btn btn-primary" onclick="saveQuotation()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 클레임 모달 -->
+<div class="modal-bg" id="claim-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="cl-modal-title">클레임 등록</span>
+      <button class="btn" onclick="closeModal('claim-modal')" style="padding:5px 9px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cl-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">클레임번호 *</label>
+          <input type="text" class="form-input" id="cl-number" placeholder="자동 생성됨">
+        </div>
+        <div class="form-group">
+          <label class="form-label">클레임 유형</label>
+          <select class="form-input" id="cl-type">
+            <option value="defect">불량 (Defect)</option>
+            <option value="shortage">수량 부족 (Shortage)</option>
+            <option value="damage">파손 (Damage)</option>
+            <option value="delay">납기 지연 (Delay)</option>
+            <option value="wrong">오배송 (Wrong Item)</option>
+            <option value="other">기타 (Other)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">거래처</label>
+          <select class="form-input" id="cl-company"><option value="">거래처 선택</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 수주</label>
+          <select class="form-input" id="cl-order"><option value="">수주 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 선적</label>
+          <select class="form-input" id="cl-shipment"><option value="">선적 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">클레임 접수일</label>
+          <input type="date" class="form-input" id="cl-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">상태</label>
+          <select class="form-input" id="cl-status">
+            <option value="open">접수</option>
+            <option value="investigating">조사중</option>
+            <option value="resolved">해결완료</option>
+            <option value="closed">종결</option>
+          </select>
+        </div>
+        <div class="form-group"></div>
+
+        <div class="section-divider">클레임 내용</div>
+        <div class="form-group form-full">
+          <label class="form-label">클레임 내용 *</label>
+          <textarea class="form-input" id="cl-desc" placeholder="바이어 클레임 상세 내용"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">클레임 수량</label>
+          <input type="number" step="0.01" class="form-input" id="cl-qty" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">클레임 금액</label>
+          <input type="number" step="0.01" class="form-input" id="cl-amount" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">통화</label>
+          <select class="form-input" id="cl-currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="KRW">KRW</option><option value="JPY">JPY</option></select>
+        </div>
+        <div class="form-group"></div>
+
+        <div class="section-divider">반품 / RMA</div>
+        <div class="form-group">
+          <label class="form-label">RMA 번호</label>
+          <input type="text" class="form-input" id="cl-rma-number" placeholder="반품 승인 번호">
+        </div>
+        <div class="form-group">
+          <label class="form-label">RMA 일자</label>
+          <input type="date" class="form-input" id="cl-rma-date">
+        </div>
+
+        <div class="section-divider">처리 결과</div>
+        <div class="form-group form-full">
+          <label class="form-label">처리 내용 / 해결 방법</label>
+          <textarea class="form-input" id="cl-resolution" placeholder="교환, 환불, 재발송, 크레딧 등 처리 내용"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">해결일</label>
+          <input type="date" class="form-input" id="cl-resolved-date">
+        </div>
+        <div class="form-group"></div>
+
+        <div class="section-divider">바이어 관리</div>
+        <div class="form-group form-full">
+          <label class="form-label">바이어 피드백</label>
+          <textarea class="form-input" id="cl-feedback" placeholder="바이어 만족도, 의견 등"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">재구매 예정일</label>
+          <input type="date" class="form-input" id="cl-repurchase">
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">비고</label>
+          <textarea class="form-input" id="cl-notes"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('claim-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveClaim()">✓ 저장</button>
     </div>
   </div>
 </div>
@@ -1580,7 +1763,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], payments = [], currentPage = 'inquiry';
+let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], payments = [], claims = [], currentPage = 'inquiry';
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -1593,10 +1776,10 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment','claim'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수',claim:'클레임 관리'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
@@ -1607,6 +1790,7 @@ function showPage(page, el) {
     production: `<button class="btn btn-primary" onclick="openProductionModal()">+ 생산 지시</button>`,
     customs: `<button class="btn btn-primary" onclick="openCustomsModal()">+ 통관 등록</button>`,
     payment: `<button class="btn btn-primary" onclick="openPaymentModal()">+ 입금 등록</button>`,
+    claim: `<button class="btn btn-primary" onclick="openClaimModal()">+ 클레임 등록</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
     document: ``
   };
@@ -1618,6 +1802,7 @@ function showPage(page, el) {
   if (page==='production') loadProduction();
   if (page==='customs') loadCustoms();
   if (page==='payment') loadPayments();
+  if (page==='claim') loadClaims();
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
 }
@@ -1638,6 +1823,7 @@ async function init() {
     try { productionOrders = await api('GET','production_orders?order=created_at.desc'); updateProductionStats(productionOrders); } catch(e) { /* production_orders 테이블 미생성 시 무시 */ }
     try { customsDecls = await api('GET','customs_declarations?order=created_at.desc'); updateCustomsStats(customsDecls); } catch(e) { /* customs_declarations 테이블 미생성 시 무시 */ }
     try { payments = await api('GET','payments?order=created_at.desc'); updatePaymentStats(payments); } catch(e) { /* payments 테이블 미생성 시 무시 */ }
+    try { claims = await api('GET','claims?order=created_at.desc'); updateClaimStats(claims); } catch(e) { /* claims 테이블 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
@@ -2299,6 +2485,156 @@ async function printQuotation(id) {
 
   document.getElementById('qt-print-content').innerHTML = html;
   document.getElementById('qt-print-modal').classList.add('open');
+}
+
+// ====================== 클레임 관리 모듈 ======================
+
+const clStatusLabel = {open:'접수',investigating:'조사중',resolved:'해결완료',closed:'종결'};
+const clStatusClass = {open:'s-negotiating',investigating:'s-reviewing',resolved:'s-quoted',closed:'s-received'};
+const clTypeLabel = {defect:'불량',shortage:'수량부족',damage:'파손',delay:'납기지연',wrong:'오배송',other:'기타'};
+
+async function loadClaims() {
+  const status = document.getElementById('cl-filter-status') ? document.getElementById('cl-filter-status').value : '';
+  let path = 'claims?order=created_at.desc';
+  if (status) path += `&status=eq.${status}`;
+  try {
+    claims = await api('GET', path);
+    updateClaimStats(claims);
+    renderClaims(claims);
+  } catch(e) {
+    document.getElementById('claim-list').innerHTML = '<tr class="empty-row"><td colspan="11">Supabase에 claims 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
+  }
+}
+
+function updateClaimStats(data) {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('cl-stat-total').textContent = data.length;
+  document.getElementById('cl-stat-open').textContent = data.filter(c=>c.status==='open'||c.status==='investigating').length;
+  document.getElementById('cl-stat-resolved').textContent = data.filter(c=>c.status==='resolved'||c.status==='closed').length;
+  document.getElementById('cl-stat-repurchase').textContent = data.filter(c=>c.repurchase_expected&&c.repurchase_expected>=today).length;
+  document.getElementById('nav-claim-badge').textContent = data.filter(c=>c.status==='open'||c.status==='investigating').length;
+}
+
+function renderClaims(data) {
+  const tbody = document.getElementById('claim-list');
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="11">등록된 클레임이 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = data.map(c => {
+    const co = companies.find(x=>x.id===c.company_id);
+    const ord = orders.find(x=>x.id===c.order_id);
+    const sym = currencySymbol[c.currency]||'';
+    const rmaBadge = c.rma_number ? `<span class="tag">${c.rma_number}</span>` : '-';
+    return `<tr>
+      <td><strong>${c.claim_number||'-'}</strong></td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${ord?ord.order_number:'-'}</td>
+      <td><span class="tag">${clTypeLabel[c.claim_type]||c.claim_type||'-'}</span></td>
+      <td>${c.claim_date||'-'}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.description||'-'}</td>
+      <td>${c.amount?sym+fmt(c.amount)+' '+c.currency:'-'}</td>
+      <td>${rmaBadge}</td>
+      <td>${c.repurchase_expected?`<span class="date-near">${c.repurchase_expected}</span>`:'-'}</td>
+      <td><span class="status ${clStatusClass[c.status]||'s-negotiating'}">${clStatusLabel[c.status]||c.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn" onclick="editClaim('${c.id}')">수정</button>
+        <button class="action-btn del" onclick="deleteClaim('${c.id}')">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function generateClaimNumber() {
+  const now = new Date();
+  const prefix = `CL-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-`;
+  try {
+    const list = await api('GET',`claims?claim_number=like.${prefix}*&order=claim_number.desc&limit=1`);
+    let next = 1;
+    if (list && list[0]) next = parseInt(list[0].claim_number.split('-').pop(),10) + 1;
+    return `${prefix}${String(next).padStart(3,'0')}`;
+  } catch(e) { return `${prefix}001`; }
+}
+
+async function openClaimModal(data=null) {
+  const csel = document.getElementById('cl-company');
+  csel.innerHTML = '<option value="">거래처 선택</option>' + companies.map(c=>`<option value="${c.id}">${c.company_name}${c.country?' ('+c.country+')':''}</option>`).join('');
+  const osel = document.getElementById('cl-order');
+  osel.innerHTML = '<option value="">수주 선택 (선택사항)</option>' + orders.map(o=>{
+    const co = companies.find(c=>c.id===o.company_id);
+    return `<option value="${o.id}">${o.order_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  const ssel = document.getElementById('cl-shipment');
+  ssel.innerHTML = '<option value="">선적 선택 (선택사항)</option>' + shipments.map(s=>{
+    const co = companies.find(c=>c.id===s.company_id);
+    return `<option value="${s.id}">${s.shipment_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  document.getElementById('cl-id').value = data?data.id:'';
+  document.getElementById('cl-modal-title').textContent = data?'클레임 수정':'클레임 등록';
+  document.getElementById('cl-number').value = data?(data.claim_number||''):(await generateClaimNumber());
+  document.getElementById('cl-type').value = data?(data.claim_type||'defect'):'defect';
+  document.getElementById('cl-company').value = data?(data.company_id||''):'';
+  document.getElementById('cl-order').value = data?(data.order_id||''):'';
+  document.getElementById('cl-shipment').value = data?(data.shipment_id||''):'';
+  document.getElementById('cl-date').value = data?(data.claim_date||''):new Date().toISOString().split('T')[0];
+  document.getElementById('cl-status').value = data?(data.status||'open'):'open';
+  document.getElementById('cl-desc').value = data?(data.description||''):'';
+  document.getElementById('cl-qty').value = data?(data.quantity||''):'';
+  document.getElementById('cl-amount').value = data?(data.amount||''):'';
+  document.getElementById('cl-currency').value = data?(data.currency||'USD'):'USD';
+  document.getElementById('cl-rma-number').value = data?(data.rma_number||''):'';
+  document.getElementById('cl-rma-date').value = data?(data.rma_date||''):'';
+  document.getElementById('cl-resolution').value = data?(data.resolution||''):'';
+  document.getElementById('cl-resolved-date').value = data?(data.resolved_date||''):'';
+  document.getElementById('cl-feedback').value = data?(data.buyer_feedback||''):'';
+  document.getElementById('cl-repurchase').value = data?(data.repurchase_expected||''):'';
+  document.getElementById('cl-notes').value = data?(data.notes||''):'';
+  document.getElementById('claim-modal').classList.add('open');
+}
+
+async function editClaim(id) {
+  const data = await api('GET',`claims?id=eq.${id}`);
+  if (data&&data[0]) openClaimModal(data[0]);
+}
+
+async function deleteClaim(id) {
+  if (!confirm('이 클레임을 삭제하시겠습니까?')) return;
+  await api('DELETE',`claims?id=eq.${id}`);
+  showToast('삭제되었습니다.','success');
+  await loadClaims();
+}
+
+async function saveClaim() {
+  const id = document.getElementById('cl-id').value;
+  const body = {
+    claim_number: document.getElementById('cl-number').value,
+    claim_type: document.getElementById('cl-type').value,
+    company_id: document.getElementById('cl-company').value||null,
+    order_id: document.getElementById('cl-order').value||null,
+    shipment_id: document.getElementById('cl-shipment').value||null,
+    claim_date: document.getElementById('cl-date').value||null,
+    status: document.getElementById('cl-status').value,
+    description: document.getElementById('cl-desc').value,
+    quantity: parseFloat(document.getElementById('cl-qty').value)||null,
+    amount: parseFloat(document.getElementById('cl-amount').value)||null,
+    currency: document.getElementById('cl-currency').value,
+    rma_number: document.getElementById('cl-rma-number').value,
+    rma_date: document.getElementById('cl-rma-date').value||null,
+    resolution: document.getElementById('cl-resolution').value,
+    resolved_date: document.getElementById('cl-resolved-date').value||null,
+    buyer_feedback: document.getElementById('cl-feedback').value,
+    repurchase_expected: document.getElementById('cl-repurchase').value||null,
+    notes: document.getElementById('cl-notes').value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (id) { await api('PATCH',`claims?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
+    else { await api('POST','claims',body); showToast('등록되었습니다.','success'); }
+    closeModal('claim-modal');
+    await loadClaims();
+  } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+function toggleClaimSqlBox() {
+  const el = document.getElementById('claim-sql-box-wrap');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ====================== 대금 회수 모듈 ======================
