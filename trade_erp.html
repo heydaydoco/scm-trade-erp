@@ -130,6 +130,16 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   .qt-print { position: absolute; left: 0; top: 0; width: 100%; padding: 30px; }
   .no-print { display: none !important; }
 }
+/* 선적 상태 */
+.s-preparing { background: #f5f5f4; color: #666; }
+.s-booked { background: #e8f4fd; color: #1a6db5; }
+.s-loaded { background: #f0eeff; color: #5b4ec8; }
+.s-departed { background: #fff3cd; color: #856404; }
+.s-arrived { background: #e6f4ea; color: #1e7e34; }
+.s-cancelled { background: #fdecea; color: #c62828; }
+.date-warn { color: #c62828; font-weight: 600; }
+.date-near { color: #856404; font-weight: 600; }
+.sql-box { background: #1a1a1a; color: #e0e0e0; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 12px; white-space: pre; overflow-x: auto; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -160,8 +170,14 @@ textarea.form-input { resize: vertical; min-height: 72px; }
       </div>
       <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>수주 등록 <span class="soon">준비중</span></div>
       <div class="nav-section">선적</div>
-      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.5H2l4-8h12l4 8z"/></svg>선적 관리 <span class="soon">준비중</span></div>
-      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>서류 생성 <span class="soon">준비중</span></div>
+      <div class="nav-item" id="nav-shipment" onclick="showPage('shipment',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.5H2l4-8h12l4 8z"/></svg>
+        선적 관리 <span class="badge" id="nav-sh-badge" style="background:#856404;">0</span>
+      </div>
+      <div class="nav-item" id="nav-document" onclick="showPage('document',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        서류 생성
+      </div>
       <div class="nav-section">분석</div>
       <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>대시보드 <span class="soon">준비중</span></div>
     </div>
@@ -262,6 +278,90 @@ textarea.form-input { resize: vertical; min-height: 72px; }
               <thead><tr><th>견적번호</th><th>발행일</th><th>거래처</th><th>품목</th><th>총액</th><th>Incoterms</th><th>유효기간</th><th>상태</th><th>관리</th></tr></thead>
               <tbody id="quotation-list"><tr class="empty-row"><td colspan="9">연결 중...</td></tr></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 선적 관리 -->
+      <div id="page-shipment" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">전체 선적</div><div class="stat-value" id="sh-stat-total">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">부킹 완료</div><div class="stat-value" id="sh-stat-booked">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">출항</div><div class="stat-value" id="sh-stat-departed">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">Cut-off 7일 이내</div><div class="stat-value" id="sh-stat-cutoff" style="color:#c62828;">0</div><div class="stat-sub">건</div></div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">선적 목록</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select class="form-input" id="sh-filter-status" onchange="loadShipments()" style="font-size:12px;padding:5px 10px;width:auto;">
+                <option value="">전체 상태</option>
+                <option value="preparing">준비중</option>
+                <option value="booked">부킹완료</option>
+                <option value="loaded">선적완료</option>
+                <option value="departed">출항</option>
+                <option value="arrived">도착</option>
+                <option value="cancelled">취소</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="openShipmentModal()">+ 선적 등록</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>선적번호</th><th>거래처</th><th>포워더</th><th>선사/선명</th><th>항차</th><th>ETD</th><th>ETA</th><th>컨테이너</th><th>Cut-off</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="shipment-list"><tr class="empty-row"><td colspan="11">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 서류 생성 -->
+      <div id="page-document" style="display:none;">
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">서류 생성</span>
+            <span style="font-size:12px;color:#888;">선적 건을 선택하여 수출 서류를 생성합니다</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>선적번호</th><th>거래처</th><th>견적번호</th><th>ETD</th><th>선명/항차</th><th>상태</th><th>서류 생성</th></tr></thead>
+              <tbody id="document-list"><tr class="empty-row"><td colspan="7">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="toggleSqlBox()">
+            <span class="section-title">📋 Supabase 테이블 생성 SQL</span>
+            <span style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="sql-box-wrap" style="display:none;padding:16px 20px;">
+            <div class="sql-box">CREATE TABLE shipments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_number TEXT UNIQUE,
+  quotation_id UUID REFERENCES quotations(id),
+  company_id UUID REFERENCES companies(id),
+  forwarder TEXT,
+  booking_number TEXT,
+  carrier TEXT,
+  vessel_name TEXT,
+  voyage TEXT,
+  loading_port TEXT,
+  discharge_port TEXT,
+  etd DATE,
+  eta DATE,
+  container_type TEXT,
+  container_count INTEGER,
+  container_mode TEXT DEFAULT 'FCL',
+  vgm_weight NUMERIC,
+  vgm_deadline DATE,
+  si_deadline DATE,
+  cutoff_date DATE,
+  pickup_date DATE,
+  status TEXT DEFAULT 'preparing',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);</div>
           </div>
         </div>
       </div>
@@ -541,6 +641,164 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   </div>
 </div>
 
+<!-- 선적 모달 -->
+<div class="modal-bg" id="shipment-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="sh-modal-title">선적 등록</span>
+      <button class="btn" onclick="closeModal('shipment-modal')" style="padding:5px 9px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="sh-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">선적번호 *</label>
+          <input type="text" class="form-input" id="sh-number" placeholder="자동 생성됨">
+        </div>
+        <div class="form-group">
+          <label class="form-label">거래처 *</label>
+          <select class="form-input" id="sh-company"><option value="">거래처 선택</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 견적</label>
+          <select class="form-input" id="sh-quotation"><option value="">견적 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">상태</label>
+          <select class="form-input" id="sh-status">
+            <option value="preparing">준비중</option>
+            <option value="booked">부킹완료</option>
+            <option value="loaded">선적완료</option>
+            <option value="departed">출항</option>
+            <option value="arrived">도착</option>
+            <option value="cancelled">취소</option>
+          </select>
+        </div>
+
+        <div class="section-divider">포워더 / 부킹 정보</div>
+        <div class="form-group">
+          <label class="form-label">포워더</label>
+          <input type="text" class="form-input" id="sh-forwarder" placeholder="예: Pantos, Kuehne+Nagel">
+        </div>
+        <div class="form-group">
+          <label class="form-label">부킹번호</label>
+          <input type="text" class="form-input" id="sh-booking" placeholder="부킹 컨펌 번호">
+        </div>
+        <div class="form-group">
+          <label class="form-label">선사</label>
+          <input type="text" class="form-input" id="sh-carrier" placeholder="예: HMM, MSC, Evergreen">
+        </div>
+        <div class="form-group">
+          <label class="form-label">선명</label>
+          <input type="text" class="form-input" id="sh-vessel" placeholder="예: EVER GIVEN">
+        </div>
+        <div class="form-group">
+          <label class="form-label">항차</label>
+          <input type="text" class="form-input" id="sh-voyage" placeholder="예: 0123E">
+        </div>
+        <div class="form-group"></div>
+
+        <div class="section-divider">컨테이너 정보</div>
+        <div class="form-group">
+          <label class="form-label">운송 모드</label>
+          <select class="form-input" id="sh-mode">
+            <option value="FCL">FCL (Full Container Load)</option>
+            <option value="LCL">LCL (Less than Container Load)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">컨테이너 타입</label>
+          <select class="form-input" id="sh-ctype">
+            <option value="">선택</option>
+            <option value="20FT">20FT</option>
+            <option value="40FT">40FT</option>
+            <option value="40HQ">40HQ</option>
+            <option value="45FT">45FT</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">컨테이너 수량</label>
+          <input type="number" class="form-input" id="sh-ccount" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">VGM 중량 (kg)</label>
+          <input type="number" step="0.01" class="form-input" id="sh-vgm" placeholder="0.00">
+        </div>
+
+        <div class="section-divider">항구 / 일정</div>
+        <div class="form-group">
+          <label class="form-label">선적항 (POL)</label>
+          <input type="text" class="form-input" id="sh-pol" placeholder="예: KRPUS (부산)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">양하항 (POD)</label>
+          <input type="text" class="form-input" id="sh-pod" placeholder="예: ITGOA (Genoa)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ETD (출항 예정일)</label>
+          <input type="date" class="form-input" id="sh-etd">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ETA (도착 예정일)</label>
+          <input type="date" class="form-input" id="sh-eta">
+        </div>
+        <div class="form-group">
+          <label class="form-label">픽업 예정일</label>
+          <input type="date" class="form-input" id="sh-pickup">
+        </div>
+        <div class="form-group">
+          <label class="form-label">VGM 마감일</label>
+          <input type="date" class="form-input" id="sh-vgm-deadline">
+        </div>
+        <div class="form-group">
+          <label class="form-label">SI 마감일 (Shipping Instruction)</label>
+          <input type="date" class="form-input" id="sh-si-deadline">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cut-off 일</label>
+          <input type="date" class="form-input" id="sh-cutoff">
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">비고</label>
+          <textarea class="form-input" id="sh-notes" placeholder="특이사항, 포워더 전달 내용 등"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('shipment-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveShipment()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Commercial Invoice 모달 -->
+<div class="modal-bg" id="ci-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header no-print">
+      <span class="modal-title">Commercial Invoice</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="window.print()">🖨️ 인쇄 / PDF</button>
+        <button class="btn" onclick="closeModal('ci-modal')" style="padding:5px 9px;">✕</button>
+      </div>
+    </div>
+    <div id="ci-content"></div>
+  </div>
+</div>
+
+<!-- Packing List 모달 -->
+<div class="modal-bg" id="pl-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header no-print">
+      <span class="modal-title">Packing List</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="window.print()">🖨️ 인쇄 / PDF</button>
+        <button class="btn" onclick="closeModal('pl-modal')" style="padding:5px 9px;">✕</button>
+      </div>
+    </div>
+    <div id="pl-content"></div>
+  </div>
+</div>
+
 <!-- 견적서 인쇄 모달 -->
 <div class="modal-bg" id="qt-print-modal">
   <div class="modal modal-lg">
@@ -577,7 +835,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-let companies = [], products = [], quotations = [], currentPage = 'inquiry';
+let companies = [], products = [], quotations = [], shipments = [], currentPage = 'inquiry';
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -590,22 +848,39 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  document.getElementById('page-title').textContent = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리'}[page];
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',shipment:'선적 관리',document:'서류 생성'};
+  document.getElementById('page-title').textContent = titles[page]||'';
+  const actions = {
+    inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
+    company: `<button class="btn btn-primary" onclick="openCompanyModal()">+ 거래처 등록</button>`,
+    product: `<button class="btn btn-primary" onclick="openProductModal()">+ 품목 등록</button>`,
+    quotation: `<button class="btn btn-primary" onclick="openQuotationModal()">+ 견적 등록</button>`,
+    shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
+    document: ``
+  };
+  document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   if (page==='company') renderCompanies();
   if (page==='product') renderProducts();
   if (page==='quotation') loadQuotations();
+  if (page==='shipment') loadShipments();
+  if (page==='document') renderDocumentList();
 }
 
 async function init() {
   try {
-    [companies, products] = await Promise.all([api('GET','companies?order=company_name'), api('GET','products?order=product_name')]);
+    [companies, products, quotations] = await Promise.all([
+      api('GET','companies?order=company_name'),
+      api('GET','products?order=product_name'),
+      api('GET','quotations?order=created_at.desc')
+    ]);
     document.getElementById('conn-status').textContent = '연결됨';
     document.getElementById('conn-status').className = 'conn-badge conn-ok';
     await loadInquiries();
-    await loadQuotations();
+    updateQtStats();
+    try { shipments = await api('GET','shipments?order=created_at.desc'); updateShipmentStats(shipments); } catch(e) { /* shipments 테이블 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
@@ -1267,6 +1542,331 @@ async function printQuotation(id) {
 
   document.getElementById('qt-print-content').innerHTML = html;
   document.getElementById('qt-print-modal').classList.add('open');
+}
+
+// ====================== 선적 모듈 ======================
+
+const shStatusLabel = {preparing:'준비중',booked:'부킹완료',loaded:'선적완료',departed:'출항',arrived:'도착',cancelled:'취소'};
+const shStatusClass = {preparing:'s-preparing',booked:'s-booked',loaded:'s-loaded',departed:'s-departed',arrived:'s-arrived',cancelled:'s-cancelled'};
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  return Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+}
+
+function dateCell(dateStr) {
+  if (!dateStr) return '-';
+  const d = daysUntil(dateStr);
+  if (d !== null && d >= 0 && d <= 3) return `<span class="date-warn">${dateStr} (D-${d})</span>`;
+  if (d !== null && d >= 0 && d <= 7) return `<span class="date-near">${dateStr} (D-${d})</span>`;
+  return dateStr;
+}
+
+async function loadShipments() {
+  const status = document.getElementById('sh-filter-status') ? document.getElementById('sh-filter-status').value : '';
+  let path = 'shipments?order=created_at.desc';
+  if (status) path += `&status=eq.${status}`;
+  try {
+    shipments = await api('GET', path);
+    updateShipmentStats(shipments);
+    renderShipments(shipments);
+  } catch(e) {
+    document.getElementById('shipment-list').innerHTML = '<tr class="empty-row"><td colspan="11">Supabase에 shipments 테이블을 먼저 생성해주세요. (서류 생성 탭 참고)</td></tr>';
+  }
+}
+
+function updateShipmentStats(data) {
+  const cutoff7 = data.filter(s => { const d = daysUntil(s.cutoff_date); return d !== null && d >= 0 && d <= 7; }).length;
+  document.getElementById('sh-stat-total').textContent = data.length;
+  document.getElementById('sh-stat-booked').textContent = data.filter(s=>s.status==='booked').length;
+  document.getElementById('sh-stat-departed').textContent = data.filter(s=>s.status==='departed').length;
+  document.getElementById('sh-stat-cutoff').textContent = cutoff7;
+  document.getElementById('nav-sh-badge').textContent = data.length;
+}
+
+function renderShipments(data) {
+  const tbody = document.getElementById('shipment-list');
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="11">등록된 선적이 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = data.map(s => {
+    const co = companies.find(c=>c.id===s.company_id);
+    const carrierVessel = [s.carrier, s.vessel_name].filter(Boolean).join(' / ');
+    const container = [s.container_mode, s.container_count&&s.container_type ? s.container_count+'x '+s.container_type : (s.container_type||'')].filter(Boolean).join(' · ');
+    return `<tr>
+      <td><strong>${s.shipment_number||'-'}</strong></td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${s.forwarder||'-'}</td>
+      <td>${carrierVessel||'-'}</td>
+      <td>${s.voyage||'-'}</td>
+      <td>${s.etd||'-'}</td>
+      <td>${s.eta||'-'}</td>
+      <td><span class="tag">${container||'-'}</span></td>
+      <td>${dateCell(s.cutoff_date)}</td>
+      <td><span class="status ${shStatusClass[s.status]||'s-preparing'}">${shStatusLabel[s.status]||s.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn" onclick="editShipment('${s.id}')">수정</button>
+        <button class="action-btn del" onclick="deleteShipment('${s.id}')">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function generateShipmentNumber() {
+  const now = new Date();
+  const prefix = `SH-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-`;
+  try {
+    const list = await api('GET',`shipments?shipment_number=like.${prefix}*&order=shipment_number.desc&limit=1`);
+    let next = 1;
+    if (list && list[0]) next = parseInt(list[0].shipment_number.split('-').pop(),10) + 1;
+    return `${prefix}${String(next).padStart(3,'0')}`;
+  } catch(e) { return `${prefix}001`; }
+}
+
+async function openShipmentModal(data=null) {
+  const csel = document.getElementById('sh-company');
+  csel.innerHTML = '<option value="">거래처 선택</option>' + companies.map(c=>`<option value="${c.id}">${c.company_name}${c.country?' ('+c.country+')':''}</option>`).join('');
+  const qsel = document.getElementById('sh-quotation');
+  qsel.innerHTML = '<option value="">견적 선택 (선택사항)</option>' + quotations.map(q=>{
+    const co = companies.find(c=>c.id===q.company_id);
+    return `<option value="${q.id}">${q.quotation_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+
+  document.getElementById('sh-id').value = data?data.id:'';
+  document.getElementById('sh-modal-title').textContent = data?'선적 수정':'선적 등록';
+  document.getElementById('sh-number').value = data?(data.shipment_number||''):(await generateShipmentNumber());
+  document.getElementById('sh-company').value = data?(data.company_id||''):'';
+  document.getElementById('sh-quotation').value = data?(data.quotation_id||''):'';
+  document.getElementById('sh-status').value = data?(data.status||'preparing'):'preparing';
+  document.getElementById('sh-forwarder').value = data?(data.forwarder||''):'';
+  document.getElementById('sh-booking').value = data?(data.booking_number||''):'';
+  document.getElementById('sh-carrier').value = data?(data.carrier||''):'';
+  document.getElementById('sh-vessel').value = data?(data.vessel_name||''):'';
+  document.getElementById('sh-voyage').value = data?(data.voyage||''):'';
+  document.getElementById('sh-mode').value = data?(data.container_mode||'FCL'):'FCL';
+  document.getElementById('sh-ctype').value = data?(data.container_type||''):'';
+  document.getElementById('sh-ccount').value = data?(data.container_count||''):'';
+  document.getElementById('sh-vgm').value = data?(data.vgm_weight||''):'';
+  document.getElementById('sh-pol').value = data?(data.loading_port||''):'';
+  document.getElementById('sh-pod').value = data?(data.discharge_port||''):'';
+  document.getElementById('sh-etd').value = data?(data.etd||''):'';
+  document.getElementById('sh-eta').value = data?(data.eta||''):'';
+  document.getElementById('sh-pickup').value = data?(data.pickup_date||''):'';
+  document.getElementById('sh-vgm-deadline').value = data?(data.vgm_deadline||''):'';
+  document.getElementById('sh-si-deadline').value = data?(data.si_deadline||''):'';
+  document.getElementById('sh-cutoff').value = data?(data.cutoff_date||''):'';
+  document.getElementById('sh-notes').value = data?(data.notes||''):'';
+  document.getElementById('shipment-modal').classList.add('open');
+}
+
+async function editShipment(id) {
+  const data = await api('GET',`shipments?id=eq.${id}`);
+  if (data&&data[0]) openShipmentModal(data[0]);
+}
+
+async function deleteShipment(id) {
+  if (!confirm('이 선적 건을 삭제하시겠습니까?')) return;
+  await api('DELETE',`shipments?id=eq.${id}`);
+  showToast('삭제되었습니다.','success');
+  await loadShipments();
+}
+
+async function saveShipment() {
+  const id = document.getElementById('sh-id').value;
+  const body = {
+    shipment_number: document.getElementById('sh-number').value,
+    company_id: document.getElementById('sh-company').value||null,
+    quotation_id: document.getElementById('sh-quotation').value||null,
+    status: document.getElementById('sh-status').value,
+    forwarder: document.getElementById('sh-forwarder').value,
+    booking_number: document.getElementById('sh-booking').value,
+    carrier: document.getElementById('sh-carrier').value,
+    vessel_name: document.getElementById('sh-vessel').value,
+    voyage: document.getElementById('sh-voyage').value,
+    container_mode: document.getElementById('sh-mode').value,
+    container_type: document.getElementById('sh-ctype').value,
+    container_count: parseInt(document.getElementById('sh-ccount').value)||null,
+    vgm_weight: parseFloat(document.getElementById('sh-vgm').value)||null,
+    loading_port: document.getElementById('sh-pol').value,
+    discharge_port: document.getElementById('sh-pod').value,
+    etd: document.getElementById('sh-etd').value||null,
+    eta: document.getElementById('sh-eta').value||null,
+    pickup_date: document.getElementById('sh-pickup').value||null,
+    vgm_deadline: document.getElementById('sh-vgm-deadline').value||null,
+    si_deadline: document.getElementById('sh-si-deadline').value||null,
+    cutoff_date: document.getElementById('sh-cutoff').value||null,
+    notes: document.getElementById('sh-notes').value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (id) { await api('PATCH',`shipments?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
+    else { await api('POST','shipments',body); showToast('등록되었습니다.','success'); }
+    closeModal('shipment-modal');
+    await loadShipments();
+  } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+// ====================== 서류 생성 ======================
+
+function renderDocumentList() {
+  const tbody = document.getElementById('document-list');
+  if (!shipments.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="7">등록된 선적이 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = shipments.map(s => {
+    const co = companies.find(c=>c.id===s.company_id);
+    const qt = quotations.find(q=>q.id===s.quotation_id);
+    return `<tr>
+      <td><strong>${s.shipment_number||'-'}</strong></td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${qt?qt.quotation_number:'-'}</td>
+      <td>${s.etd||'-'}</td>
+      <td>${[s.vessel_name,s.voyage].filter(Boolean).join(' / ')||'-'}</td>
+      <td><span class="status ${shStatusClass[s.status]||'s-preparing'}">${shStatusLabel[s.status]||s.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn primary" onclick="generateCI('${s.id}')">CI</button>
+        <button class="action-btn primary" onclick="generatePL('${s.id}')">PL</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function generateCI(shipmentId) {
+  const sh = shipments.find(s=>s.id===shipmentId);
+  if (!sh) return;
+  const co = companies.find(c=>c.id===sh.company_id);
+  const qt = sh.quotation_id ? quotations.find(q=>q.id===sh.quotation_id) : null;
+  let items = [];
+  if (qt) { try { items = await api('GET',`quotation_items?quotation_id=eq.${qt.id}&order=sort_order`); } catch(e){} }
+  const sym = qt ? (currencySymbol[qt.currency]||'') : '$';
+  const currency = qt ? (qt.currency||'USD') : 'USD';
+  const today = new Date().toISOString().split('T')[0];
+  const html = `<div class="qt-print">
+    <h1>COMMERCIAL INVOICE</h1>
+    <div class="qt-num">${sh.shipment_number}</div>
+    <div class="qt-print-header">
+      <div class="qt-print-block">
+        <h3>Shipper / Exporter</h3>
+        <p class="name">Your Company Name</p>
+        <p>Address Line 1</p>
+        <p>City, Country</p>
+        <p>Tel: +82-XX-XXXX-XXXX</p>
+        <p>Email: info@company.com</p>
+      </div>
+      <div class="qt-print-block">
+        <h3>Consignee / Buyer</h3>
+        <p class="name">${co?co.company_name:'-'}</p>
+        <p>${co?(co.city||'')+(co.country?', '+co.country:''):''}</p>
+        <p>${co?(co.contact_name?'Attn: '+co.contact_name:''):''}</p>
+        <p>${co?(co.contact_email||''):''}</p>
+      </div>
+      <div class="qt-print-block">
+        <h3>Shipment Details</h3>
+        <p><strong>Invoice No.:</strong> ${sh.shipment_number}</p>
+        <p><strong>Date:</strong> ${today}</p>
+        <p><strong>Vessel / Voyage:</strong> ${[sh.vessel_name,sh.voyage].filter(Boolean).join(' / ')||'-'}</p>
+        <p><strong>Port of Loading:</strong> ${sh.loading_port||'-'}</p>
+        <p><strong>Port of Discharge:</strong> ${sh.discharge_port||'-'}</p>
+        <p><strong>ETD:</strong> ${sh.etd||'-'}</p>
+        <p><strong>Incoterms:</strong> ${qt?(qt.incoterms||'-'):'-'}</p>
+        <p><strong>Payment:</strong> ${qt?(qt.payment_terms||'-'):'-'}</p>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th style="width:5%">No.</th><th style="width:35%">Description of Goods</th><th style="width:12%">HS Code</th><th style="width:10%" class="num">Qty</th><th style="width:8%">Unit</th><th style="width:15%" class="num">Unit Price</th><th style="width:15%" class="num">Amount</th></tr></thead>
+      <tbody>
+        ${items.length ? items.map((it,i)=>`<tr>
+          <td>${i+1}</td>
+          <td><strong>${it.product_name}</strong></td>
+          <td>${it.hs_code||'-'}</td>
+          <td class="num">${Number(it.quantity).toLocaleString()}</td>
+          <td>${it.unit||'-'}</td>
+          <td class="num">${sym}${fmt(it.unit_price)}</td>
+          <td class="num">${sym}${fmt(it.amount)}</td>
+        </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">품목 정보 없음 — 견적을 연결해주세요</td></tr>'}
+      </tbody>
+    </table>
+    ${qt ? `<div class="totals-print">
+      <div>Subtotal: <strong style="display:inline-block;min-width:130px;text-align:right;">${sym}${fmt(qt.subtotal)}</strong></div>
+      ${qt.discount>0?`<div>Discount: <strong style="display:inline-block;min-width:130px;text-align:right;color:#c62828;">-${sym}${fmt(qt.discount)}</strong></div>`:''}
+      <div class="grand">TOTAL: <strong style="display:inline-block;min-width:130px;text-align:right;">${sym}${fmt(qt.total_amount)} ${currency}</strong></div>
+    </div>` : ''}
+    <div class="terms" style="text-align:right;margin-top:40px;">
+      <p style="margin-bottom:60px;">Authorized Signature &amp; Stamp:</p>
+      <p style="border-top:1px solid #333;display:inline-block;padding-top:6px;min-width:200px;text-align:center;">____________________</p>
+    </div>
+  </div>`;
+  document.getElementById('ci-content').innerHTML = html;
+  document.getElementById('ci-modal').classList.add('open');
+}
+
+async function generatePL(shipmentId) {
+  const sh = shipments.find(s=>s.id===shipmentId);
+  if (!sh) return;
+  const co = companies.find(c=>c.id===sh.company_id);
+  const qt = sh.quotation_id ? quotations.find(q=>q.id===sh.quotation_id) : null;
+  let items = [];
+  if (qt) { try { items = await api('GET',`quotation_items?quotation_id=eq.${qt.id}&order=sort_order`); } catch(e){} }
+  const today = new Date().toISOString().split('T')[0];
+  const totalQty = items.reduce((s,it)=>s+Number(it.quantity||0),0);
+  const html = `<div class="qt-print">
+    <h1>PACKING LIST</h1>
+    <div class="qt-num">${sh.shipment_number}</div>
+    <div class="qt-print-header">
+      <div class="qt-print-block">
+        <h3>Shipper / Exporter</h3>
+        <p class="name">Your Company Name</p>
+        <p>Address Line 1</p>
+        <p>City, Country</p>
+      </div>
+      <div class="qt-print-block">
+        <h3>Consignee</h3>
+        <p class="name">${co?co.company_name:'-'}</p>
+        <p>${co?(co.city||'')+(co.country?', '+co.country:''):''}</p>
+        <p>${co?(co.contact_name?'Attn: '+co.contact_name:''):''}</p>
+      </div>
+      <div class="qt-print-block">
+        <h3>Shipment Details</h3>
+        <p><strong>P/L No.:</strong> ${sh.shipment_number}</p>
+        <p><strong>Date:</strong> ${today}</p>
+        <p><strong>Vessel / Voyage:</strong> ${[sh.vessel_name,sh.voyage].filter(Boolean).join(' / ')||'-'}</p>
+        <p><strong>Port of Loading:</strong> ${sh.loading_port||'-'}</p>
+        <p><strong>Port of Discharge:</strong> ${sh.discharge_port||'-'}</p>
+        <p><strong>Container:</strong> ${[sh.container_count?sh.container_count+'x':null, sh.container_type, sh.container_mode].filter(Boolean).join(' ')||'-'}</p>
+        ${sh.vgm_weight?`<p><strong>VGM:</strong> ${Number(sh.vgm_weight).toLocaleString()} kg</p>`:''}
+      </div>
+    </div>
+    <table>
+      <thead><tr><th style="width:5%">No.</th><th style="width:30%">Description</th><th style="width:12%">HS Code</th><th style="width:8%" class="num">Qty</th><th style="width:7%">Unit</th><th style="width:13%" class="num">Net Wt (kg)</th><th style="width:13%" class="num">Gross Wt (kg)</th><th style="width:12%" class="num">CBM</th></tr></thead>
+      <tbody>
+        ${items.length ? items.map((it,i)=>`<tr>
+          <td>${i+1}</td>
+          <td><strong>${it.product_name}</strong></td>
+          <td>${it.hs_code||'-'}</td>
+          <td class="num">${Number(it.quantity).toLocaleString()}</td>
+          <td>${it.unit||'-'}</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;padding:20px;color:#888;">품목 정보 없음 — 견적을 연결해주세요</td></tr>'}
+        <tr style="font-weight:700;border-top:2px solid #1a6db5;">
+          <td colspan="3" style="font-weight:700;">TOTAL</td>
+          <td class="num">${totalQty.toLocaleString()}</td>
+          <td></td>
+          <td class="num">—</td>
+          <td class="num">${sh.vgm_weight?Number(sh.vgm_weight).toLocaleString()+' kg':'—'}</td>
+          <td class="num">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="terms" style="text-align:right;margin-top:40px;">
+      <p style="margin-bottom:60px;">Authorized Signature &amp; Stamp:</p>
+      <p style="border-top:1px solid #333;display:inline-block;padding-top:6px;min-width:200px;text-align:center;">____________________</p>
+    </div>
+  </div>`;
+  document.getElementById('pl-content').innerHTML = html;
+  document.getElementById('pl-modal').classList.add('open');
+}
+
+function toggleSqlBox() {
+  const el = document.getElementById('sql-box-wrap');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
