@@ -1575,14 +1575,18 @@ CREATE TABLE order_items (
 
 <!-- 수주 모달 -->
 <div class="modal-bg" id="order-modal">
-  <div class="modal modal-lg">
+  <div class="modal modal-xl">
     <div class="modal-header">
       <span class="modal-title" id="ord-modal-title">수주 등록</span>
-      <button class="btn" onclick="closeModal('order-modal')" style="padding:5px 9px;">✕</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-sm" onclick="printOCFromModal()" title="Order Confirmation 인쇄">🖨️ OC</button>
+        <button class="btn" onclick="closeModal('order-modal')" style="padding:5px 9px;">✕</button>
+      </div>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="padding:16px 20px;">
       <input type="hidden" id="ord-id">
-      <div class="form-grid">
+      <!-- 기본 정보 -->
+      <div class="form-grid-3" style="margin-bottom:14px;">
         <div class="form-group">
           <label class="form-label">수주번호 *</label>
           <input type="text" class="form-input" id="ord-number" placeholder="자동 생성됨">
@@ -1607,15 +1611,9 @@ CREATE TABLE order_items (
           <label class="form-label">납기 예정일 *</label>
           <input type="date" class="form-input" id="ord-delivery">
         </div>
-
-        <div class="section-divider">거래 조건</div>
         <div class="form-group">
           <label class="form-label">통화</label>
-          <select class="form-input" id="ord-currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="KRW">KRW</option><option value="JPY">JPY</option><option value="CNY">CNY</option></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">수주 총액</label>
-          <input type="number" step="0.01" class="form-input" id="ord-amount" placeholder="0.00">
+          <select class="form-input" id="ord-currency" onchange="renderOrdItems()"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="KRW">KRW</option><option value="JPY">JPY</option><option value="CNY">CNY</option></select>
         </div>
         <div class="form-group">
           <label class="form-label">Incoterms</label>
@@ -1625,8 +1623,6 @@ CREATE TABLE order_items (
           <label class="form-label">결제조건</label>
           <select class="form-input" id="ord-payment"><option value="">선택</option><option value="T/T 30% in advance">T/T 30% in advance</option><option value="T/T 50% in advance">T/T 50% in advance</option><option value="T/T 100% in advance">T/T 100% in advance</option><option value="L/C at sight">L/C at sight</option><option value="L/C 30days">L/C 30days</option><option value="L/C 60days">L/C 60days</option><option value="L/C 90days">L/C 90days</option><option value="CAD">CAD</option><option value="O/A 30days">O/A 30days</option><option value="O/A 60days">O/A 60days</option><option value="O/A 90days">O/A 90days</option></select>
         </div>
-
-        <div class="section-divider">L/C 정보 (L/C 거래 시)</div>
         <div class="form-group">
           <label class="form-label">L/C 필요</label>
           <select class="form-input" id="ord-lc-required"><option value="false">불필요</option><option value="true">필요</option></select>
@@ -1643,8 +1639,6 @@ CREATE TABLE order_items (
           <label class="form-label">L/C 발행 은행</label>
           <input type="text" class="form-input" id="ord-lc-bank" placeholder="예: Citibank, HSBC">
         </div>
-
-        <div class="section-divider">기타</div>
         <div class="form-group">
           <label class="form-label">상태</label>
           <select class="form-input" id="ord-status">
@@ -1657,14 +1651,77 @@ CREATE TABLE order_items (
             <option value="cancelled">취소</option>
           </select>
         </div>
-        <div class="form-group"></div>
-        <div class="form-group form-full">
+        <div class="form-group" style="grid-column:1/-1;">
           <label class="form-label">바이어 특이사항 / 요구사항</label>
-          <textarea class="form-input" id="ord-special" placeholder="특별 포장 사양, 라벨링 요구, 검사 조건 등"></textarea>
+          <textarea class="form-input" id="ord-special" style="min-height:48px;" placeholder="특별 포장 사양, 라벨링 요구, 검사 조건 등"></textarea>
         </div>
-        <div class="form-group form-full">
+        <div class="form-group" style="grid-column:1/-1;">
           <label class="form-label">비고</label>
-          <textarea class="form-input" id="ord-notes"></textarea>
+          <textarea class="form-input" id="ord-notes" style="min-height:40px;"></textarea>
+        </div>
+      </div>
+
+      <!-- 품목 목록 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;">품목 목록 <span id="ord-item-count" style="font-size:11px;color:#888;font-weight:400;"></span></span>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:11px;color:#888;">일괄 추가:</span>
+          <select class="form-input" id="ord-bulk-product" style="font-size:11px;padding:4px 6px;width:160px;">
+            <option value="">품목 선택</option>
+          </select>
+          <input type="number" class="form-input" id="ord-bulk-qty" placeholder="수량" min="1" style="font-size:11px;padding:4px 6px;width:70px;">
+          <input type="number" class="form-input" id="ord-bulk-rows" placeholder="행수" min="1" max="1000" value="1" style="font-size:11px;padding:4px 6px;width:60px;" title="이 품목을 N행으로 추가 (각 행 독립 수정 가능)">
+          <button class="btn btn-sm" onclick="bulkAddOrdItems()" style="background:#1e7e34;color:#fff;border-color:#1e7e34;">추가</button>
+          <button class="btn btn-sm" onclick="addOrdItem()">+ 빈 행</button>
+          <button class="btn btn-sm" style="color:#c62828;" onclick="clearOrdItems()" title="전체 행 초기화">전체 삭제</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;border:1px solid #e5e5e3;border-radius:8px;margin-bottom:10px;">
+        <table class="ord-items-tbl">
+          <thead>
+            <tr>
+              <th style="width:26px;">#</th>
+              <th style="min-width:140px;">품목명 *</th>
+              <th style="width:75px;">HS Code</th>
+              <th style="width:60px;">수량</th>
+              <th style="width:50px;">단위</th>
+              <th style="width:80px;">단가</th>
+              <th style="width:80px;">금액</th>
+              <th style="width:52px;">가로(cm)</th>
+              <th style="width:52px;">세로(cm)</th>
+              <th style="width:52px;">높이(cm)</th>
+              <th style="width:62px;">CBM/ea</th>
+              <th style="width:62px;">총CBM</th>
+              <th style="width:68px;">총중량(kg)</th>
+              <th style="width:60px;">선적수량</th>
+              <th style="width:62px;">백오더</th>
+              <th style="width:90px;">비고</th>
+              <th style="width:24px;"></th>
+            </tr>
+          </thead>
+          <tbody id="ord-items-body">
+            <tr class="empty-row"><td colspan="17" style="text-align:center;padding:24px;color:#aaa;">품목을 추가하세요</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 합계 + 컨테이너 플래닝 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="background:#f8faff;border:1px solid #d0e4f7;border-radius:8px;padding:12px 16px;">
+          <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#1a6db5;">합계 요약</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">
+            <div>총 품목 행수: <strong id="sum-rows">0</strong></div>
+            <div>총 수량: <strong id="sum-qty">0</strong></div>
+            <div>총 CBM: <strong id="sum-cbm" style="color:#1a6db5;">0.000</strong></div>
+            <div>총 중량: <strong id="sum-weight">0</strong> kg</div>
+            <div style="grid-column:1/-1;margin-top:4px;padding-top:4px;border-top:1px solid #d0e4f7;">총 금액: <strong id="sum-amount" style="font-size:14px;color:#1a6db5;">$0.00</strong></div>
+          </div>
+        </div>
+        <div style="background:#f8fff8;border:1px solid #b8e0c0;border-radius:8px;padding:12px 16px;">
+          <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#1e7e34;">컨테이너 플래닝 (FCL)</div>
+          <div class="container-plan" id="ord-container-plan">
+            <div style="text-align:center;color:#aaa;font-size:12px;grid-column:1/-1;">CBM 입력 후 자동 계산</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1884,6 +1941,7 @@ async function api(method, path, body) {
 }
 
 let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], payments = [], claims = [], currentPage = 'inquiry';
+let ordLineItems = [];
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -3257,7 +3315,7 @@ async function loadOrders() {
     updateOrderStats(orders);
     renderOrders(orders);
   } catch(e) {
-    document.getElementById('order-list').innerHTML = '<tr class="empty-row"><td colspan="11">Supabase에 orders 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
+    document.getElementById('order-list').innerHTML = '<tr class="empty-row"><td colspan="13">Supabase에 orders 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
   }
 }
 
@@ -3272,12 +3330,14 @@ function updateOrderStats(data) {
 
 function renderOrders(data) {
   const tbody = document.getElementById('order-list');
-  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="11">등록된 수주가 없습니다.</td></tr>'; return; }
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="13">등록된 수주가 없습니다.</td></tr>'; return; }
   tbody.innerHTML = data.map(o => {
     const co = companies.find(c=>c.id===o.company_id);
     const qt = quotations.find(q=>q.id===o.quotation_id);
     const sym = currencySymbol[o.currency]||'';
     const lcBadge = o.lc_required ? `<span class="tag" style="background:#e8f4fd;color:#1a6db5;">L/C</span>` : '-';
+    const cbmStr = o.total_cbm > 0 ? Number(o.total_cbm).toFixed(3)+' ㎥' : '-';
+    const boBadge = o.has_backorder ? `<span class="bo-badge">백오더</span>` : '-';
     return `<tr>
       <td><strong>${o.order_number||'-'}</strong></td>
       <td>${o.po_number||'-'}</td>
@@ -3286,8 +3346,10 @@ function renderOrders(data) {
       <td>${o.order_date||'-'}</td>
       <td>${dateCell(o.delivery_date)}</td>
       <td style="font-weight:600;color:#1a6db5;">${sym}${fmt(o.total_amount)}</td>
+      <td style="font-size:11px;color:#555;">${cbmStr}</td>
       <td><span style="font-size:11px;">${o.payment_terms||'-'}</span></td>
       <td>${lcBadge}</td>
+      <td>${boBadge}</td>
       <td><span class="status ${ordStatusClass[o.status]||'s-received'}">${ordStatusLabel[o.status]||o.status}</span></td>
       <td style="white-space:nowrap;">
         <button class="action-btn primary" onclick="printOC('${o.id}')">OC</button>
@@ -3317,6 +3379,8 @@ async function openOrderModal(data=null) {
     const co = companies.find(c=>c.id===q.company_id);
     return `<option value="${q.id}">${q.quotation_number}${co?' — '+co.company_name:''}</option>`;
   }).join('');
+  const bpsel = document.getElementById('ord-bulk-product');
+  bpsel.innerHTML = '<option value="">품목 선택</option>' + products.map(p=>`<option value="${p.id}" data-name="${p.product_name}" data-hs="${p.hs_code||''}" data-price="${p.unit_price||0}">${p.product_name}</option>`).join('');
   document.getElementById('ord-id').value = data?data.id:'';
   document.getElementById('ord-modal-title').textContent = data?'수주 수정':'수주 등록';
   document.getElementById('ord-number').value = data?(data.order_number||''):(await generateOrderNumber());
@@ -3326,16 +3390,24 @@ async function openOrderModal(data=null) {
   document.getElementById('ord-date').value = data?(data.order_date||''):new Date().toISOString().split('T')[0];
   document.getElementById('ord-delivery').value = data?(data.delivery_date||''):'';
   document.getElementById('ord-currency').value = data?(data.currency||'USD'):'USD';
-  document.getElementById('ord-amount').value = data?(data.total_amount||''):'';
   document.getElementById('ord-incoterms').value = data?(data.incoterms||''):'';
   document.getElementById('ord-payment').value = data?(data.payment_terms||''):'';
-  document.getElementById('ord-lc-required').value = data?String(data.lc_required):'false';
+  document.getElementById('ord-lc-required').value = data?String(data.lc_required||'false'):'false';
   document.getElementById('ord-lc-number').value = data?(data.lc_number||''):'';
   document.getElementById('ord-lc-expiry').value = data?(data.lc_expiry_date||''):'';
   document.getElementById('ord-lc-bank').value = data?(data.lc_issuing_bank||''):'';
   document.getElementById('ord-status').value = data?(data.status||'received'):'received';
   document.getElementById('ord-special').value = data?(data.special_requirements||''):'';
   document.getElementById('ord-notes').value = data?(data.notes||''):'';
+  // Load items
+  ordLineItems = [];
+  if (data && data.id) {
+    try {
+      const items = await api('GET', `order_items?order_id=eq.${data.id}&order=sort_order`);
+      ordLineItems = (items||[]).map(it => ({...it}));
+    } catch(e) { ordLineItems = []; }
+  }
+  renderOrdItems();
   document.getElementById('order-modal').classList.add('open');
 }
 
@@ -3346,7 +3418,6 @@ function fillOrderFromQuotation() {
   if (!qt) return;
   document.getElementById('ord-company').value = qt.company_id||'';
   document.getElementById('ord-currency').value = qt.currency||'USD';
-  document.getElementById('ord-amount').value = qt.total_amount||'';
   document.getElementById('ord-incoterms').value = qt.incoterms||'';
   document.getElementById('ord-payment').value = qt.payment_terms||'';
 }
@@ -3365,6 +3436,11 @@ async function deleteOrder(id) {
 
 async function saveOrder() {
   const id = document.getElementById('ord-id').value;
+  const currency = document.getElementById('ord-currency').value;
+  // Calculate totals from items
+  const totalAmt = ordLineItems.reduce((s,it) => s + Number(it.amount||0), 0);
+  const totalCBM = ordLineItems.reduce((s,it) => s + Number(it.total_cbm||0), 0);
+  const totalWeight = ordLineItems.reduce((s,it) => s + Number(it.gross_weight_kg||0), 0);
   const body = {
     order_number: document.getElementById('ord-number').value,
     quotation_id: document.getElementById('ord-quotation').value||null,
@@ -3372,8 +3448,10 @@ async function saveOrder() {
     po_number: document.getElementById('ord-po').value,
     order_date: document.getElementById('ord-date').value||null,
     delivery_date: document.getElementById('ord-delivery').value||null,
-    currency: document.getElementById('ord-currency').value,
-    total_amount: parseFloat(document.getElementById('ord-amount').value)||0,
+    currency,
+    total_amount: totalAmt || 0,
+    total_cbm: totalCBM,
+    total_gross_weight: totalWeight,
     incoterms: document.getElementById('ord-incoterms').value,
     payment_terms: document.getElementById('ord-payment').value,
     lc_required: document.getElementById('ord-lc-required').value === 'true',
@@ -3386,11 +3464,271 @@ async function saveOrder() {
     updated_at: new Date().toISOString()
   };
   try {
-    if (id) { await api('PATCH',`orders?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
-    else { await api('POST','orders',body); showToast('등록되었습니다.','success'); }
+    let orderId = id;
+    if (id) {
+      await api('PATCH',`orders?id=eq.${id}`,body);
+    } else {
+      const res = await api('POST','orders',{...body, Prefer:'return=representation'});
+      orderId = res && res[0] ? res[0].id : null;
+      if (!orderId) {
+        const found = await api('GET',`orders?order_number=eq.${body.order_number}`);
+        orderId = found && found[0] ? found[0].id : null;
+      }
+    }
+    // Save items
+    if (orderId) {
+      try { await api('DELETE', `order_items?order_id=eq.${orderId}`); } catch(e){}
+      if (ordLineItems.length > 0) {
+        const itemsToSave = ordLineItems.map((it, i) => ({
+          order_id: orderId,
+          product_id: it.product_id||null,
+          product_name: it.product_name||'',
+          hs_code: it.hs_code||null,
+          quantity: Number(it.quantity)||0,
+          unit: it.unit||'PCS',
+          unit_price: Number(it.unit_price)||0,
+          currency,
+          amount: Number(it.amount)||0,
+          length_cm: Number(it.length_cm)||null,
+          width_cm: Number(it.width_cm)||null,
+          height_cm: Number(it.height_cm)||null,
+          cbm_per_unit: Number(it.cbm_per_unit)||0,
+          total_cbm: Number(it.total_cbm)||0,
+          gross_weight_kg: Number(it.gross_weight_kg)||0,
+          net_weight_kg: Number(it.net_weight_kg)||0,
+          shipped_quantity: Number(it.shipped_quantity)||0,
+          backorder_quantity: Math.max(0, Number(it.quantity||0) - Number(it.shipped_quantity||0)),
+          status: it.status||'pending',
+          notes: it.notes||null,
+          sort_order: i
+        }));
+        await api('POST', 'order_items', itemsToSave);
+      }
+    }
+    showToast(id?'수정되었습니다.':'등록되었습니다.','success');
     closeModal('order-modal');
     await loadOrders();
   } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+function renderOrdItems() {
+  const tbody = document.getElementById('ord-items-body');
+  const currency = document.getElementById('ord-currency') ? document.getElementById('ord-currency').value : 'USD';
+  const sym = currencySymbol[currency]||'$';
+  if (!ordLineItems.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="17" style="text-align:center;padding:24px;color:#aaa;">품목을 추가하세요</td></tr>';
+    updateOrdTotals();
+    return;
+  }
+  tbody.innerHTML = ordLineItems.map((it, i) => {
+    const bo = Math.max(0, Number(it.quantity||0) - Number(it.shipped_quantity||0));
+    const boStyle = bo > 0 ? 'class="ord-bo-cell"' : 'class="ord-auto-cell"';
+    return `<tr id="ord-row-${i}">
+      <td style="text-align:center;color:#888;font-size:10px;">${i+1}</td>
+      <td>
+        <select onchange="selectOrdProduct(${i},this)" style="width:100%;font-size:11px;padding:4px 5px;border:1px solid #e5e5e3;border-radius:4px;background:#fff;">
+          <option value="">직접 입력</option>
+          ${products.map(p=>`<option value="${p.id}" ${it.product_id===p.id?'selected':''}>${p.product_name}</option>`).join('')}
+        </select>
+        <input type="text" value="${it.product_name||''}" oninput="ordLineItems[${i}].product_name=this.value" style="width:100%;margin-top:2px;padding:3px 5px;border:1px solid #e5e5e3;border-radius:4px;font-size:11px;" placeholder="품목명">
+      </td>
+      <td><input type="text" value="${it.hs_code||''}" oninput="ordLineItems[${i}].hs_code=this.value" placeholder="예:7616.99"></td>
+      <td><input type="number" value="${it.quantity||''}" min="0" oninput="ordLineItems[${i}].quantity=+this.value;updateOrdItemCalc(${i})" placeholder="0"></td>
+      <td>
+        <select onchange="ordLineItems[${i}].unit=this.value">
+          ${['PCS','SET','KG','MT','CBM','CTN','PAL','BOX','EA'].map(u=>`<option ${it.unit===u?'selected':''}>${u}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="number" value="${it.unit_price||''}" step="0.01" min="0" oninput="ordLineItems[${i}].unit_price=+this.value;updateOrdItemCalc(${i})" placeholder="0.00"></td>
+      <td class="ord-auto-cell">${sym}${Number(it.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td><input type="number" value="${it.length_cm||''}" step="0.1" min="0" oninput="ordLineItems[${i}].length_cm=+this.value;updateOrdItemCalc(${i})" placeholder="0"></td>
+      <td><input type="number" value="${it.width_cm||''}" step="0.1" min="0" oninput="ordLineItems[${i}].width_cm=+this.value;updateOrdItemCalc(${i})" placeholder="0"></td>
+      <td><input type="number" value="${it.height_cm||''}" step="0.1" min="0" oninput="ordLineItems[${i}].height_cm=+this.value;updateOrdItemCalc(${i})" placeholder="0"></td>
+      <td class="ord-auto-cell">${Number(it.cbm_per_unit||0).toFixed(4)}</td>
+      <td class="ord-auto-cell">${Number(it.total_cbm||0).toFixed(3)}</td>
+      <td><input type="number" value="${it.gross_weight_kg||''}" step="0.1" min="0" oninput="ordLineItems[${i}].gross_weight_kg=+this.value;updateOrdTotals()" placeholder="0"></td>
+      <td><input type="number" value="${it.shipped_quantity||''}" step="1" min="0" oninput="ordLineItems[${i}].shipped_quantity=+this.value;updateOrdItemCalc(${i})" placeholder="0" title="선적 완료 수량"></td>
+      <td ${boStyle}>${bo > 0 ? bo.toLocaleString() : '—'}</td>
+      <td><input type="text" value="${it.notes||''}" oninput="ordLineItems[${i}].notes=this.value" placeholder="비고"></td>
+      <td style="text-align:center;">
+        <button onclick="removeOrdItem(${i})" style="background:none;border:none;color:#c62828;cursor:pointer;font-size:14px;padding:2px 4px;" title="삭제">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+  updateOrdTotals();
+}
+
+function selectOrdProduct(idx, sel) {
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt.value) return;
+  const p = products.find(pr => pr.id === opt.value);
+  if (!p) return;
+  ordLineItems[idx].product_id = p.id;
+  ordLineItems[idx].product_name = p.product_name;
+  ordLineItems[idx].hs_code = p.hs_code || '';
+  ordLineItems[idx].unit_price = p.unit_price || 0;
+  renderOrdItems();
+}
+
+function updateOrdItemCalc(idx) {
+  const it = ordLineItems[idx];
+  const qty = Number(it.quantity||0);
+  const price = Number(it.unit_price||0);
+  it.amount = qty * price;
+  const l = Number(it.length_cm||0), w = Number(it.width_cm||0), h = Number(it.height_cm||0);
+  it.cbm_per_unit = (l && w && h) ? (l * w * h) / 1000000 : 0;
+  it.total_cbm = it.cbm_per_unit * qty;
+  it.backorder_quantity = Math.max(0, qty - Number(it.shipped_quantity||0));
+  const row = document.getElementById('ord-row-'+idx);
+  if (!row) { renderOrdItems(); return; }
+  const cells = row.querySelectorAll('td');
+  const sym = currencySymbol[document.getElementById('ord-currency').value]||'$';
+  const bo = it.backorder_quantity;
+  cells[6].textContent = sym + Number(it.amount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  cells[10].textContent = Number(it.cbm_per_unit).toFixed(4);
+  cells[11].textContent = Number(it.total_cbm).toFixed(3);
+  cells[14].textContent = bo > 0 ? bo.toLocaleString() : '—';
+  cells[14].className = bo > 0 ? 'ord-bo-cell' : 'ord-auto-cell';
+  updateOrdTotals();
+}
+
+function updateOrdTotals() {
+  const totalRows = ordLineItems.length;
+  const totalQty = ordLineItems.reduce((s,it) => s + Number(it.quantity||0), 0);
+  const totalCBM = ordLineItems.reduce((s,it) => s + Number(it.total_cbm||0), 0);
+  const totalWeight = ordLineItems.reduce((s,it) => s + Number(it.gross_weight_kg||0), 0);
+  const totalAmt = ordLineItems.reduce((s,it) => s + Number(it.amount||0), 0);
+  const currency = document.getElementById('ord-currency') ? document.getElementById('ord-currency').value : 'USD';
+  const sym = currencySymbol[currency]||'$';
+  const el = n => document.getElementById(n);
+  if (el('sum-rows')) el('sum-rows').textContent = totalRows;
+  if (el('sum-qty')) el('sum-qty').textContent = totalQty.toLocaleString();
+  if (el('sum-cbm')) el('sum-cbm').textContent = totalCBM.toFixed(3);
+  if (el('sum-weight')) el('sum-weight').textContent = totalWeight.toLocaleString();
+  if (el('sum-amount')) el('sum-amount').textContent = sym + totalAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  if (el('ord-item-count')) el('ord-item-count').textContent = totalRows > 0 ? `(${totalRows}행, ${totalQty.toLocaleString()}개)` : '';
+  updateContainerPlan(totalCBM);
+}
+
+function updateContainerPlan(totalCBM) {
+  const el = document.getElementById('ord-container-plan');
+  if (!el) return;
+  if (totalCBM <= 0) {
+    el.innerHTML = '<div style="text-align:center;color:#aaa;font-size:12px;grid-column:1/-1;padding:8px;">CBM 입력 후 자동 계산</div>';
+    return;
+  }
+  const types = [
+    { label: "20'GP", cbm: 25.5, color: '#93b8d8' },
+    { label: "40'GP", cbm: 55.8, color: '#1a6db5' },
+    { label: "40'HC", cbm: 67.7, color: '#1e7e34' }
+  ];
+  let bestIdx = 0, bestWaste = Infinity;
+  types.forEach((t, i) => {
+    const count = Math.ceil(totalCBM / t.cbm);
+    const waste = (count * t.cbm) - totalCBM;
+    if (waste < bestWaste || (waste === bestWaste && count <= Math.ceil(totalCBM / types[bestIdx].cbm))) {
+      bestWaste = waste; bestIdx = i;
+    }
+  });
+  el.innerHTML = types.map((t, i) => {
+    const count = Math.ceil(totalCBM / t.cbm);
+    const fill = Math.min(100, (totalCBM / (count * t.cbm)) * 100);
+    const isBest = i === bestIdx;
+    return `<div class="container-card${isBest?' best':''}" title="${totalCBM.toFixed(3)} CBM / ${(count*t.cbm).toFixed(1)} CBM 가용">
+      <div style="font-size:13px;font-weight:700;">${t.label}</div>
+      <div style="font-size:18px;font-weight:700;color:${t.color};margin:4px 0;">${count}개</div>
+      <div style="font-size:10px;color:#888;">${totalCBM.toFixed(2)} / ${(count*t.cbm).toFixed(1)} CBM</div>
+      <div class="container-fill"><div class="container-fill-bar" style="width:${fill.toFixed(0)}%;background:${fill>=90?'#c62828':fill>=70?t.color:'#aaa'};"></div></div>
+      <div style="font-size:10px;color:#888;margin-top:3px;">적재율 ${fill.toFixed(0)}%${isBest?' ✓':''}</div>
+    </div>`;
+  }).join('');
+}
+
+function addOrdItem(pId='', pName='', hsCode='', qty=0, unit='PCS', price=0) {
+  ordLineItems.push({ product_id:pId, product_name:pName, hs_code:hsCode, quantity:qty, unit, unit_price:price, amount:qty*price, length_cm:'', width_cm:'', height_cm:'', cbm_per_unit:0, total_cbm:0, gross_weight_kg:'', net_weight_kg:'', shipped_quantity:0, backorder_quantity:qty, status:'pending', notes:'' });
+  renderOrdItems();
+}
+
+function bulkAddOrdItems() {
+  const sel = document.getElementById('ord-bulk-product');
+  const qtyEl = document.getElementById('ord-bulk-qty');
+  const rowsEl = document.getElementById('ord-bulk-rows');
+  const rows = Math.min(1000, Math.max(1, parseInt(rowsEl.value)||1));
+  const qty = parseInt(qtyEl.value)||0;
+  let pId='', pName='', hs='', price=0;
+  if (sel.value) {
+    const opt = sel.options[sel.selectedIndex];
+    pId = opt.value;
+    pName = opt.getAttribute('data-name')||'';
+    hs = opt.getAttribute('data-hs')||'';
+    price = parseFloat(opt.getAttribute('data-price'))||0;
+  }
+  for (let i=0; i<rows; i++) addOrdItem(pId, pName, hs, qty, 'PCS', price);
+  qtyEl.value = '';
+  rowsEl.value = '1';
+  showToast(`${rows}행 추가됨`,'success');
+}
+
+function removeOrdItem(idx) {
+  ordLineItems.splice(idx, 1);
+  renderOrdItems();
+}
+
+function clearOrdItems() {
+  if (ordLineItems.length > 0 && !confirm(`${ordLineItems.length}행을 모두 삭제하시겠습니까?`)) return;
+  ordLineItems = [];
+  renderOrdItems();
+}
+
+function toggleBoSection() {
+  const el = document.getElementById('bo-section-wrap');
+  const lbl = document.getElementById('bo-toggle-label');
+  const isHidden = el.style.display === 'none';
+  el.style.display = isHidden ? '' : 'none';
+  lbl.textContent = isHidden ? '클릭하여 접기' : '클릭하여 펼치기/접기';
+  if (isHidden) loadBackorders();
+}
+
+async function loadBackorders() {
+  const tbody = document.getElementById('bo-list');
+  try {
+    const items = await api('GET', 'order_items?backorder_quantity=gt.0&order=created_at.desc');
+    if (!items || !items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="11">백오더 없음</td></tr>';
+      document.getElementById('ord-stat-backorder').textContent = 0;
+      return;
+    }
+    document.getElementById('ord-stat-backorder').textContent = items.length;
+    tbody.innerHTML = items.map(it => {
+      const ord = orders.find(o => o.id === it.order_id);
+      const co = ord ? companies.find(c => c.id === ord.company_id) : null;
+      const sym = ord ? (currencySymbol[ord.currency]||'$') : '$';
+      const boAmt = Number(it.backorder_quantity||0) * Number(it.unit_price||0);
+      return `<tr>
+        <td><strong>${ord?ord.order_number:'-'}</strong></td>
+        <td>${co?co.company_name:'-'}</td>
+        <td>${it.product_name||'-'}</td>
+        <td><span class="tag">${it.hs_code||'-'}</span></td>
+        <td style="text-align:right;">${Number(it.quantity||0).toLocaleString()}</td>
+        <td style="text-align:right;">${Number(it.shipped_quantity||0).toLocaleString()}</td>
+        <td style="text-align:right;font-weight:600;color:#c62828;">${Number(it.backorder_quantity||0).toLocaleString()}</td>
+        <td style="text-align:right;">${sym}${fmt(it.unit_price)}</td>
+        <td style="text-align:right;font-weight:600;color:#856404;">${sym}${fmt(boAmt)}</td>
+        <td>${ord?dateCell(ord.delivery_date):'-'}</td>
+        <td style="white-space:nowrap;">
+          <button class="action-btn" onclick="editOrder('${it.order_id}')">수주 수정</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">order_items 테이블을 먼저 생성해주세요.</td></tr>';
+  }
+}
+
+async function printOCFromModal() {
+  const id = document.getElementById('ord-id').value;
+  if (id) printOC(id);
+  else showToast('먼저 저장 후 OC를 출력하세요.','error');
 }
 
 async function printOC(orderId) {
@@ -3399,7 +3737,8 @@ async function printOC(orderId) {
   const co = companies.find(c=>c.id===ord.company_id);
   const qt = ord.quotation_id ? quotations.find(q=>q.id===ord.quotation_id) : null;
   let items = [];
-  if (qt) { try { items = await api('GET',`quotation_items?quotation_id=eq.${qt.id}&order=sort_order`); } catch(e){} }
+  try { items = await api('GET',`order_items?order_id=eq.${orderId}&order=sort_order`); } catch(e){}
+  if (!items.length && qt) { try { items = await api('GET',`quotation_items?quotation_id=eq.${qt.id}&order=sort_order`); } catch(e){} }
   const sym = currencySymbol[ord.currency]||'';
   const today = new Date().toISOString().split('T')[0];
   const html = `<div class="qt-print">
