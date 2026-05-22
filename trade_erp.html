@@ -191,6 +191,11 @@ textarea.form-input { resize: vertical; min-height: 72px; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         서류 생성
       </div>
+      <div class="nav-section">정산</div>
+      <div class="nav-item" id="nav-payment" onclick="showPage('payment',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        대금 회수 <span class="badge" id="nav-payment-badge" style="background:#c62828;">0</span>
+      </div>
       <div class="nav-section">분석</div>
       <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>대시보드 <span class="soon">준비중</span></div>
     </div>
@@ -578,6 +583,72 @@ textarea.form-input { resize: vertical; min-height: 72px; }
       </div>
     </div>
   </div>
+
+      <!-- 대금 회수 -->
+      <div id="page-payment" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">전체 건수</div><div class="stat-value" id="pm-stat-total">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">미수금 건수</div><div class="stat-value" id="pm-stat-outstanding" style="color:#c62828;">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">총 미수금</div><div class="stat-value" id="pm-stat-amount" style="font-size:18px;color:#c62828;">$0</div><div class="stat-sub">USD 환산</div></div>
+          <div class="stat-card"><div class="stat-label">입금 완료</div><div class="stat-value" id="pm-stat-completed">0</div><div class="stat-sub">건</div></div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">대금 회수 목록</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select class="form-input" id="pm-filter-status" onchange="loadPayments()" style="font-size:12px;padding:5px 10px;width:auto;">
+                <option value="">전체 상태</option>
+                <option value="pending">미입금</option>
+                <option value="partial">부분 입금</option>
+                <option value="completed">완료</option>
+                <option value="overdue">연체</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="openPaymentModal()">+ 입금 등록</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>입금번호</th><th>거래처</th><th>수주번호</th><th>결제방식</th><th>청구금액</th><th>입금액</th><th>미수금</th><th>환차손익</th><th>입금일</th><th>L/C 하자</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="payment-list"><tr class="empty-row"><td colspan="12">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="togglePaymentSqlBox()">
+            <span class="section-title">📋 Supabase 테이블 생성 SQL</span>
+            <span style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="payment-sql-box-wrap" style="display:none;padding:16px 20px;">
+            <div class="sql-box">CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_number TEXT UNIQUE,
+  order_id UUID REFERENCES orders(id),
+  shipment_id UUID REFERENCES shipments(id),
+  company_id UUID REFERENCES companies(id),
+  payment_type TEXT DEFAULT 'tt',
+  payment_date DATE,
+  invoice_amount NUMERIC DEFAULT 0,
+  invoice_currency TEXT DEFAULT 'USD',
+  received_amount NUMERIC DEFAULT 0,
+  received_currency TEXT DEFAULT 'USD',
+  exchange_rate NUMERIC DEFAULT 1,
+  krw_amount NUMERIC,
+  exchange_gain_loss NUMERIC DEFAULT 0,
+  bank_reference TEXT,
+  lc_nego_date DATE,
+  lc_discrepancy BOOLEAN DEFAULT FALSE,
+  lc_discrepancy_detail TEXT,
+  outstanding_amount NUMERIC DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- 문의 등록 모달 -->
@@ -848,6 +919,119 @@ textarea.form-input { resize: vertical; min-height: 72px; }
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('quotation-modal')">취소</button>
       <button class="btn btn-primary" onclick="saveQuotation()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 대금 회수 모달 -->
+<div class="modal-bg" id="payment-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="pm-modal-title">입금 등록</span>
+      <button class="btn" onclick="closeModal('payment-modal')" style="padding:5px 9px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pm-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">입금번호 *</label>
+          <input type="text" class="form-input" id="pm-number" placeholder="자동 생성됨">
+        </div>
+        <div class="form-group">
+          <label class="form-label">결제방식</label>
+          <select class="form-input" id="pm-type">
+            <option value="tt">T/T (전신환)</option>
+            <option value="lc">L/C (신용장)</option>
+            <option value="cad">CAD</option>
+            <option value="oa">O/A</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">거래처</label>
+          <select class="form-input" id="pm-company"><option value="">거래처 선택</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 수주</label>
+          <select class="form-input" id="pm-order" onchange="fillPaymentFromOrder()"><option value="">수주 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 선적</label>
+          <select class="form-input" id="pm-shipment"><option value="">선적 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">상태</label>
+          <select class="form-input" id="pm-status">
+            <option value="pending">미입금</option>
+            <option value="partial">부분 입금</option>
+            <option value="completed">완료</option>
+            <option value="overdue">연체</option>
+          </select>
+        </div>
+
+        <div class="section-divider">금액 정보</div>
+        <div class="form-group">
+          <label class="form-label">청구 금액 (Invoice)</label>
+          <input type="number" step="0.01" class="form-input" id="pm-invoice-amount" placeholder="0.00" oninput="calcPayment()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">청구 통화</label>
+          <select class="form-input" id="pm-invoice-currency" onchange="calcPayment()"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="JPY">JPY</option><option value="CNY">CNY</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">입금 금액</label>
+          <input type="number" step="0.01" class="form-input" id="pm-received-amount" placeholder="0.00" oninput="calcPayment()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">입금 통화</label>
+          <select class="form-input" id="pm-received-currency" onchange="calcPayment()"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="KRW">KRW</option><option value="JPY">JPY</option><option value="CNY">CNY</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">적용 환율 (→ KRW)</label>
+          <input type="number" step="0.01" class="form-input" id="pm-exchange-rate" placeholder="예: 1350.00" oninput="calcPayment()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">원화 환산액 (₩)</label>
+          <input type="number" class="form-input" id="pm-krw" placeholder="자동 계산" readonly style="background:#fafafa;">
+        </div>
+        <div class="form-group">
+          <label class="form-label">미수금</label>
+          <input type="number" step="0.01" class="form-input" id="pm-outstanding" placeholder="0.00" readonly style="background:#fafafa;">
+        </div>
+        <div class="form-group">
+          <label class="form-label">환차손익 (₩)</label>
+          <input type="number" class="form-input" id="pm-gain-loss" placeholder="0" oninput="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">입금일</label>
+          <input type="date" class="form-input" id="pm-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">은행 참조번호</label>
+          <input type="text" class="form-input" id="pm-bank-ref" placeholder="MT103 등 은행 레퍼런스">
+        </div>
+
+        <div class="section-divider">L/C 네고 정보 (L/C 거래 시)</div>
+        <div class="form-group">
+          <label class="form-label">네고 제출일</label>
+          <input type="date" class="form-input" id="pm-nego-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">하자 (Discrepancy)</label>
+          <select class="form-input" id="pm-discrepancy"><option value="false">없음</option><option value="true">하자 있음</option></select>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">하자 내용</label>
+          <textarea class="form-input" id="pm-discrepancy-detail" placeholder="하자 내용 및 조치 사항"></textarea>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">비고</label>
+          <textarea class="form-input" id="pm-notes"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('payment-modal')">취소</button>
+      <button class="btn btn-primary" onclick="savePayment()">✓ 저장</button>
     </div>
   </div>
 </div>
@@ -1396,7 +1580,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], currentPage = 'inquiry';
+let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], payments = [], currentPage = 'inquiry';
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -1409,10 +1593,10 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','order','production','customs','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
@@ -1422,6 +1606,7 @@ function showPage(page, el) {
     order: `<button class="btn btn-primary" onclick="openOrderModal()">+ 수주 등록</button>`,
     production: `<button class="btn btn-primary" onclick="openProductionModal()">+ 생산 지시</button>`,
     customs: `<button class="btn btn-primary" onclick="openCustomsModal()">+ 통관 등록</button>`,
+    payment: `<button class="btn btn-primary" onclick="openPaymentModal()">+ 입금 등록</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
     document: ``
   };
@@ -1432,6 +1617,7 @@ function showPage(page, el) {
   if (page==='order') loadOrders();
   if (page==='production') loadProduction();
   if (page==='customs') loadCustoms();
+  if (page==='payment') loadPayments();
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
 }
@@ -1451,6 +1637,7 @@ async function init() {
     try { orders = await api('GET','orders?order=created_at.desc'); updateOrderStats(orders); } catch(e) { /* orders 테이블 미생성 시 무시 */ }
     try { productionOrders = await api('GET','production_orders?order=created_at.desc'); updateProductionStats(productionOrders); } catch(e) { /* production_orders 테이블 미생성 시 무시 */ }
     try { customsDecls = await api('GET','customs_declarations?order=created_at.desc'); updateCustomsStats(customsDecls); } catch(e) { /* customs_declarations 테이블 미생성 시 무시 */ }
+    try { payments = await api('GET','payments?order=created_at.desc'); updatePaymentStats(payments); } catch(e) { /* payments 테이블 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
@@ -2112,6 +2299,186 @@ async function printQuotation(id) {
 
   document.getElementById('qt-print-content').innerHTML = html;
   document.getElementById('qt-print-modal').classList.add('open');
+}
+
+// ====================== 대금 회수 모듈 ======================
+
+const pmStatusLabel = {pending:'미입금',partial:'부분입금',completed:'완료',overdue:'연체'};
+const pmStatusClass = {pending:'s-received',partial:'s-negotiating',completed:'s-won',overdue:'s-lost'};
+const pmTypeLabel = {tt:'T/T',lc:'L/C',cad:'CAD',oa:'O/A'};
+
+async function loadPayments() {
+  const status = document.getElementById('pm-filter-status') ? document.getElementById('pm-filter-status').value : '';
+  let path = 'payments?order=created_at.desc';
+  if (status) path += `&status=eq.${status}`;
+  try {
+    payments = await api('GET', path);
+    updatePaymentStats(payments);
+    renderPayments(payments);
+  } catch(e) {
+    document.getElementById('payment-list').innerHTML = '<tr class="empty-row"><td colspan="12">Supabase에 payments 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
+  }
+}
+
+function updatePaymentStats(data) {
+  const outstanding = data.filter(p=>p.status==='pending'||p.status==='partial'||p.status==='overdue');
+  const totalOutstanding = outstanding.reduce((s,p)=>s+Number(p.outstanding_amount||0),0);
+  document.getElementById('pm-stat-total').textContent = data.length;
+  document.getElementById('pm-stat-outstanding').textContent = outstanding.length;
+  document.getElementById('pm-stat-amount').textContent = '$'+Number(totalOutstanding).toLocaleString(undefined,{maximumFractionDigits:0});
+  document.getElementById('pm-stat-completed').textContent = data.filter(p=>p.status==='completed').length;
+  document.getElementById('nav-payment-badge').textContent = outstanding.length;
+}
+
+function renderPayments(data) {
+  const tbody = document.getElementById('payment-list');
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="12">등록된 입금 내역이 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = data.map(p => {
+    const co = companies.find(c=>c.id===p.company_id);
+    const ord = orders.find(o=>o.id===p.order_id);
+    const invSym = currencySymbol[p.invoice_currency]||'';
+    const recSym = currencySymbol[p.received_currency]||'';
+    const glColor = Number(p.exchange_gain_loss)>=0 ? '#1e7e34' : '#c62828';
+    const glStr = p.exchange_gain_loss ? `<span style="color:${glColor};font-weight:600;">${Number(p.exchange_gain_loss)>=0?'+':''}₩${Number(p.exchange_gain_loss).toLocaleString()}</span>` : '-';
+    const discBadge = p.lc_discrepancy ? `<span class="tag" style="background:#fdecea;color:#c62828;">하자</span>` : '-';
+    return `<tr>
+      <td><strong>${p.payment_number||'-'}</strong></td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${ord?ord.order_number:'-'}</td>
+      <td><span class="tag">${pmTypeLabel[p.payment_type]||p.payment_type||'-'}</span></td>
+      <td>${invSym}${fmt(p.invoice_amount)} ${p.invoice_currency||''}</td>
+      <td>${recSym}${fmt(p.received_amount)} ${p.received_currency||''}</td>
+      <td style="color:#c62828;font-weight:600;">${invSym}${fmt(p.outstanding_amount)}</td>
+      <td>${glStr}</td>
+      <td>${p.payment_date||'-'}</td>
+      <td>${discBadge}</td>
+      <td><span class="status ${pmStatusClass[p.status]||'s-received'}">${pmStatusLabel[p.status]||p.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn" onclick="editPayment('${p.id}')">수정</button>
+        <button class="action-btn del" onclick="deletePayment('${p.id}')">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function calcPayment() {
+  const inv = parseFloat(document.getElementById('pm-invoice-amount').value)||0;
+  const rec = parseFloat(document.getElementById('pm-received-amount').value)||0;
+  const rate = parseFloat(document.getElementById('pm-exchange-rate').value)||0;
+  const outstanding = Math.max(0, inv - rec);
+  document.getElementById('pm-outstanding').value = outstanding.toFixed(2);
+  if (rate > 0) document.getElementById('pm-krw').value = Math.round(rec * rate);
+}
+
+async function generatePaymentNumber() {
+  const now = new Date();
+  const prefix = `PM-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-`;
+  try {
+    const list = await api('GET',`payments?payment_number=like.${prefix}*&order=payment_number.desc&limit=1`);
+    let next = 1;
+    if (list && list[0]) next = parseInt(list[0].payment_number.split('-').pop(),10) + 1;
+    return `${prefix}${String(next).padStart(3,'0')}`;
+  } catch(e) { return `${prefix}001`; }
+}
+
+async function openPaymentModal(data=null) {
+  const csel = document.getElementById('pm-company');
+  csel.innerHTML = '<option value="">거래처 선택</option>' + companies.map(c=>`<option value="${c.id}">${c.company_name}${c.country?' ('+c.country+')':''}</option>`).join('');
+  const osel = document.getElementById('pm-order');
+  osel.innerHTML = '<option value="">수주 선택 (선택사항)</option>' + orders.map(o=>{
+    const co = companies.find(c=>c.id===o.company_id);
+    return `<option value="${o.id}">${o.order_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  const ssel = document.getElementById('pm-shipment');
+  ssel.innerHTML = '<option value="">선적 선택 (선택사항)</option>' + shipments.map(s=>{
+    const co = companies.find(c=>c.id===s.company_id);
+    return `<option value="${s.id}">${s.shipment_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  document.getElementById('pm-id').value = data?data.id:'';
+  document.getElementById('pm-modal-title').textContent = data?'입금 수정':'입금 등록';
+  document.getElementById('pm-number').value = data?(data.payment_number||''):(await generatePaymentNumber());
+  document.getElementById('pm-type').value = data?(data.payment_type||'tt'):'tt';
+  document.getElementById('pm-company').value = data?(data.company_id||''):'';
+  document.getElementById('pm-order').value = data?(data.order_id||''):'';
+  document.getElementById('pm-shipment').value = data?(data.shipment_id||''):'';
+  document.getElementById('pm-status').value = data?(data.status||'pending'):'pending';
+  document.getElementById('pm-invoice-amount').value = data?(data.invoice_amount||''):'';
+  document.getElementById('pm-invoice-currency').value = data?(data.invoice_currency||'USD'):'USD';
+  document.getElementById('pm-received-amount').value = data?(data.received_amount||''):'';
+  document.getElementById('pm-received-currency').value = data?(data.received_currency||'USD'):'USD';
+  document.getElementById('pm-exchange-rate').value = data?(data.exchange_rate||''):'';
+  document.getElementById('pm-krw').value = data?(data.krw_amount||''):'';
+  document.getElementById('pm-outstanding').value = data?(data.outstanding_amount||''):'';
+  document.getElementById('pm-gain-loss').value = data?(data.exchange_gain_loss||''):'';
+  document.getElementById('pm-date').value = data?(data.payment_date||''):'';
+  document.getElementById('pm-bank-ref').value = data?(data.bank_reference||''):'';
+  document.getElementById('pm-nego-date').value = data?(data.lc_nego_date||''):'';
+  document.getElementById('pm-discrepancy').value = data?String(data.lc_discrepancy):'false';
+  document.getElementById('pm-discrepancy-detail').value = data?(data.lc_discrepancy_detail||''):'';
+  document.getElementById('pm-notes').value = data?(data.notes||''):'';
+  document.getElementById('payment-modal').classList.add('open');
+}
+
+function fillPaymentFromOrder() {
+  const ordId = document.getElementById('pm-order').value;
+  if (!ordId) return;
+  const ord = orders.find(o=>o.id===ordId);
+  if (!ord) return;
+  document.getElementById('pm-company').value = ord.company_id||'';
+  document.getElementById('pm-invoice-amount').value = ord.total_amount||'';
+  document.getElementById('pm-invoice-currency').value = ord.currency||'USD';
+  document.getElementById('pm-type').value = ord.payment_terms&&ord.payment_terms.startsWith('L/C')?'lc':'tt';
+  calcPayment();
+}
+
+async function editPayment(id) {
+  const data = await api('GET',`payments?id=eq.${id}`);
+  if (data&&data[0]) openPaymentModal(data[0]);
+}
+
+async function deletePayment(id) {
+  if (!confirm('이 입금 내역을 삭제하시겠습니까?')) return;
+  await api('DELETE',`payments?id=eq.${id}`);
+  showToast('삭제되었습니다.','success');
+  await loadPayments();
+}
+
+async function savePayment() {
+  const id = document.getElementById('pm-id').value;
+  const body = {
+    payment_number: document.getElementById('pm-number').value,
+    payment_type: document.getElementById('pm-type').value,
+    company_id: document.getElementById('pm-company').value||null,
+    order_id: document.getElementById('pm-order').value||null,
+    shipment_id: document.getElementById('pm-shipment').value||null,
+    status: document.getElementById('pm-status').value,
+    invoice_amount: parseFloat(document.getElementById('pm-invoice-amount').value)||0,
+    invoice_currency: document.getElementById('pm-invoice-currency').value,
+    received_amount: parseFloat(document.getElementById('pm-received-amount').value)||0,
+    received_currency: document.getElementById('pm-received-currency').value,
+    exchange_rate: parseFloat(document.getElementById('pm-exchange-rate').value)||null,
+    krw_amount: parseFloat(document.getElementById('pm-krw').value)||null,
+    exchange_gain_loss: parseFloat(document.getElementById('pm-gain-loss').value)||0,
+    bank_reference: document.getElementById('pm-bank-ref').value,
+    payment_date: document.getElementById('pm-date').value||null,
+    lc_nego_date: document.getElementById('pm-nego-date').value||null,
+    lc_discrepancy: document.getElementById('pm-discrepancy').value==='true',
+    lc_discrepancy_detail: document.getElementById('pm-discrepancy-detail').value,
+    outstanding_amount: parseFloat(document.getElementById('pm-outstanding').value)||0,
+    notes: document.getElementById('pm-notes').value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (id) { await api('PATCH',`payments?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
+    else { await api('POST','payments',body); showToast('등록되었습니다.','success'); }
+    closeModal('payment-modal');
+    await loadPayments();
+  } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+function togglePaymentSqlBox() {
+  const el = document.getElementById('payment-sql-box-wrap');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ====================== 수출 통관 모듈 ======================
