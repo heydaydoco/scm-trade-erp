@@ -202,7 +202,10 @@ textarea.form-input { resize: vertical; min-height: 72px; }
         클레임 관리 <span class="badge" id="nav-claim-badge" style="background:#856404;">0</span>
       </div>
       <div class="nav-section">분석</div>
-      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>대시보드 <span class="soon">준비중</span></div>
+      <div class="nav-item" id="nav-dashboard" onclick="showPage('dashboard',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        대시보드
+      </div>
     </div>
   </div>
 
@@ -713,6 +716,66 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 대시보드 -->
+      <div id="page-dashboard" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">올해 수주 금액</div><div class="stat-value" id="dash-total-orders" style="font-size:20px;">$0</div><div class="stat-sub">USD 합산</div></div>
+          <div class="stat-card"><div class="stat-label">미수금</div><div class="stat-value" id="dash-unpaid" style="font-size:20px;color:#c62828;">$0</div><div class="stat-sub">미입금 합산</div></div>
+          <div class="stat-card"><div class="stat-label">진행중 선적</div><div class="stat-value" id="dash-active-shipments" style="color:#856404;">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">이번달 입금</div><div class="stat-value" id="dash-this-month-payment" style="font-size:20px;color:#1e7e34;">$0</div><div class="stat-sub">USD 합산</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">월별 수주 실적</span>
+              <span id="dash-year-label" style="font-size:12px;color:#888;"></span>
+            </div>
+            <div style="padding:16px 20px 20px;">
+              <div id="dash-monthly-chart" style="display:flex;align-items:flex-end;gap:5px;height:150px;"></div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">바이어별 매출 순위</span>
+              <span style="font-size:11px;color:#888;">수주금액 기준</span>
+            </div>
+            <div style="padding:12px 20px;" id="dash-buyer-rank"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">알림 &amp; 주의 사항</span>
+              <span id="dash-alert-count" style="font-size:12px;color:#c62828;font-weight:600;"></span>
+            </div>
+            <div style="padding:4px 20px;" id="dash-alerts"></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">처리중 클레임</span>
+              <span style="font-size:11px;color:#888;">최근 순</span>
+            </div>
+            <div style="padding:4px 20px;" id="dash-claims-list"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">진행중 선적</span>
+              <span style="font-size:11px;color:#888;">부킹·선적·출항 중</span>
+            </div>
+            <div style="padding:4px 20px;" id="dash-active-sh-list"></div>
+          </div>
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">미입금 현황</span>
+              <span style="font-size:11px;color:#888;">미입금·연체</span>
+            </div>
+            <div style="padding:4px 20px;" id="dash-payment-list"></div>
           </div>
         </div>
       </div>
@@ -1776,10 +1839,10 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment','claim'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment','claim','dashboard'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수',claim:'클레임 관리'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수',claim:'클레임 관리',dashboard:'대시보드'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
@@ -1792,7 +1855,8 @@ function showPage(page, el) {
     payment: `<button class="btn btn-primary" onclick="openPaymentModal()">+ 입금 등록</button>`,
     claim: `<button class="btn btn-primary" onclick="openClaimModal()">+ 클레임 등록</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
-    document: ``
+    document: ``,
+    dashboard: ``
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   if (page==='company') renderCompanies();
@@ -1805,6 +1869,7 @@ function showPage(page, el) {
   if (page==='claim') loadClaims();
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
+  if (page==='dashboard') loadDashboard();
 }
 
 async function init() {
@@ -3664,6 +3729,159 @@ async function generatePL(shipmentId) {
 function toggleSqlBox() {
   const el = document.getElementById('sql-box-wrap');
   el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function loadDashboard() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('dash-year-label').textContent = year + '년';
+
+  // KPI: total orders this year
+  const thisYearOrders = orders.filter(o => o.order_date && o.order_date.startsWith(String(year)));
+  const totalOrderAmt = thisYearOrders.reduce((s,o) => s + Number(o.total_amount||0), 0);
+  document.getElementById('dash-total-orders').textContent = '$' + Math.round(totalOrderAmt).toLocaleString();
+
+  // KPI: unpaid (pending or overdue payments)
+  const pendingPay = payments.filter(p => p.status === 'pending' || p.status === 'overdue');
+  const unpaidAmt = pendingPay.reduce((s,p) => s + Number(p.amount||0), 0);
+  document.getElementById('dash-unpaid').textContent = '$' + Math.round(unpaidAmt).toLocaleString();
+
+  // KPI: active shipments
+  const activeShipments = shipments.filter(s => ['booked','loaded','departed'].includes(s.status));
+  document.getElementById('dash-active-shipments').textContent = activeShipments.length;
+
+  // KPI: this month received payments
+  const thisMonthPay = payments.filter(p => p.payment_date && p.payment_date.startsWith(`${year}-${month}`) && p.status === 'completed');
+  const thisMonthAmt = thisMonthPay.reduce((s,p) => s + Number(p.amount||0), 0);
+  document.getElementById('dash-this-month-payment').textContent = '$' + Math.round(thisMonthAmt).toLocaleString();
+
+  // Monthly chart (orders this year by month)
+  const monthLabels = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  const monthlyAmts = Array(12).fill(0);
+  thisYearOrders.forEach(o => {
+    if (o.order_date) {
+      const m = parseInt(o.order_date.split('-')[1], 10) - 1;
+      monthlyAmts[m] += Number(o.total_amount || 0);
+    }
+  });
+  const maxAmt = Math.max(...monthlyAmts, 1);
+  const chartEl = document.getElementById('dash-monthly-chart');
+  chartEl.innerHTML = monthLabels.map((lbl, i) => {
+    const barH = Math.max(Math.round((monthlyAmts[i] / maxAmt) * 120), 2);
+    const isCur = (i === now.getMonth());
+    const val = monthlyAmts[i] > 0 ? (monthlyAmts[i] >= 1000 ? '$'+Math.round(monthlyAmts[i]/1000)+'K' : '$'+Math.round(monthlyAmts[i])) : '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;">
+      <div style="font-size:9px;color:#555;font-weight:600;height:14px;line-height:14px;">${val}</div>
+      <div style="flex:1;display:flex;align-items:flex-end;width:100%;">
+        <div style="background:${isCur?'#1a6db5':'#93b8d8'};border-radius:4px 4px 0 0;width:100%;height:${barH}px;"></div>
+      </div>
+      <div style="font-size:9px;color:#888;">${lbl}</div>
+    </div>`;
+  }).join('');
+
+  // Buyer ranking
+  const buyerMap = {};
+  orders.forEach(o => {
+    const co = companies.find(c => c.id === o.company_id);
+    const name = co ? co.company_name : '미지정';
+    buyerMap[name] = (buyerMap[name]||0) + Number(o.total_amount||0);
+  });
+  const buyerRanks = Object.entries(buyerMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxBuyer = buyerRanks.length ? buyerRanks[0][1] : 1;
+  const rankEl = document.getElementById('dash-buyer-rank');
+  rankEl.innerHTML = buyerRanks.length === 0
+    ? '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px;">수주 데이터 없음</div>'
+    : buyerRanks.map(([name, amt], i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0f0ef;">
+        <span style="font-size:11px;font-weight:700;color:#888;width:18px;text-align:center;">${i+1}</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:600;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
+          <div style="height:5px;background:#f0f0ef;border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.round(amt/maxBuyer*100)}%;background:#1a6db5;border-radius:3px;"></div></div>
+        </div>
+        <span style="font-size:11px;color:#555;white-space:nowrap;">$${Math.round(amt).toLocaleString()}</span>
+      </div>`).join('');
+
+  // Alerts
+  const alertItems = [];
+  const today = new Date().toISOString().split('T')[0];
+
+  payments.filter(p => p.status === 'overdue' || (p.status === 'pending' && p.due_date && p.due_date < today)).forEach(p => {
+    const co = companies.find(c => c.id === p.company_id);
+    alertItems.push({color:'#c62828', text:`미수금 연체: ${co?co.company_name:p.payment_number||''} — $${Number(p.amount||0).toLocaleString()}`});
+  });
+
+  claims.filter(c => c.status === 'open' || c.status === 'investigating').forEach(c => {
+    const co = companies.find(co => co.id === c.company_id);
+    alertItems.push({color:'#856404', text:`클레임 ${c.status==='investigating'?'조사중':'접수'}: ${co?co.company_name:''} (${clTypeLabel[c.claim_type]||c.claim_type||''})`});
+  });
+
+  shipments.filter(s => s.cutoff_date && ['preparing','booked'].includes(s.status)).forEach(s => {
+    const d = daysUntil(s.cutoff_date);
+    if (d !== null && d >= 0 && d <= 7)
+      alertItems.push({color: d<=3?'#c62828':'#856404', text:`Cut-off D-${d}: ${s.shipment_number} → ${s.discharge_port||''}`});
+  });
+
+  shipments.filter(s => s.etd && ['booked','loaded'].includes(s.status)).forEach(s => {
+    const d = daysUntil(s.etd);
+    if (d !== null && d >= 0 && d <= 5)
+      alertItems.push({color:'#1a6db5', text:`ETD D-${d}: ${s.shipment_number} → ${s.discharge_port||''}`});
+  });
+
+  const alertsEl = document.getElementById('dash-alerts');
+  document.getElementById('dash-alert-count').textContent = alertItems.length > 0 ? alertItems.length+'건' : '';
+  alertsEl.innerHTML = alertItems.length === 0
+    ? '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px;">이상 없음</div>'
+    : alertItems.map(a => `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0ef;font-size:12px;"><div style="width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:3px;background:${a.color};"></div><span>${a.text}</span></div>`).join('');
+
+  // Active shipments list
+  const shEl = document.getElementById('dash-active-sh-list');
+  const actSh = shipments.filter(s => ['booked','loaded','departed'].includes(s.status)).slice(0,5);
+  shEl.innerHTML = actSh.length === 0
+    ? '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px;">진행중 선적 없음</div>'
+    : actSh.map(s => {
+        const co = companies.find(c => c.id === s.company_id);
+        return `<div style="padding:8px 0;border-bottom:1px solid #f0f0ef;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;">${s.shipment_number}</span>
+            <span class="status s-${s.status}">${shStatusLabel[s.status]||s.status}</span>
+          </div>
+          <div style="color:#888;margin-top:2px;">${co?co.company_name:''} → ${s.discharge_port||''} ${s.etd?'| ETD '+s.etd:''}</div>
+        </div>`;
+      }).join('');
+
+  // Unpaid payments list
+  const pmEl = document.getElementById('dash-payment-list');
+  const unpaidList = payments.filter(p => p.status === 'pending' || p.status === 'overdue').slice(0,5);
+  pmEl.innerHTML = unpaidList.length === 0
+    ? '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px;">미입금 없음</div>'
+    : unpaidList.map(p => {
+        const co = companies.find(c => c.id === p.company_id);
+        const isOverdue = p.status==='overdue' || (p.due_date && p.due_date < today);
+        return `<div style="padding:8px 0;border-bottom:1px solid #f0f0ef;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;${isOverdue?'color:#c62828;':''}">${p.payment_number||''}</span>
+            <span style="font-weight:600;">$${Number(p.amount||0).toLocaleString()}</span>
+          </div>
+          <div style="color:#888;margin-top:2px;">${co?co.company_name:''} ${p.due_date?'| 기한: '+p.due_date:''}</div>
+        </div>`;
+      }).join('');
+
+  // Claims list
+  const clEl = document.getElementById('dash-claims-list');
+  const openCl = claims.filter(c => c.status==='open'||c.status==='investigating').slice(0,5);
+  clEl.innerHTML = openCl.length === 0
+    ? '<div style="padding:20px;text-align:center;color:#aaa;font-size:13px;">처리중 클레임 없음</div>'
+    : openCl.map(c => {
+        const co = companies.find(co => co.id === c.company_id);
+        return `<div style="padding:8px 0;border-bottom:1px solid #f0f0ef;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;">${c.claim_number}</span>
+            <span class="status ${c.status==='open'?'s-received':'s-reviewing'}">${clStatusLabel[c.status]||c.status}</span>
+          </div>
+          <div style="color:#888;margin-top:2px;">${co?co.company_name:''} — ${c.description?(c.description.length>35?c.description.substring(0,35)+'…':c.description):''}</div>
+        </div>`;
+      }).join('');
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
