@@ -177,6 +177,11 @@ textarea.form-input { resize: vertical; min-height: 72px; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         생산/발주 관리 <span class="badge" id="nav-prod-badge" style="background:#1e7e34;">0</span>
       </div>
+      <div class="nav-section">통관</div>
+      <div class="nav-item" id="nav-customs" onclick="showPage('customs',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        수출 통관 <span class="badge" id="nav-customs-badge" style="background:#c62828;">0</span>
+      </div>
       <div class="nav-section">선적</div>
       <div class="nav-item" id="nav-shipment" onclick="showPage('shipment',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.5H2l4-8h12l4 8z"/></svg>
@@ -505,6 +510,74 @@ textarea.form-input { resize: vertical; min-height: 72px; }
       </div>
     </div>
   </div>
+
+      <!-- 수출 통관 -->
+      <div id="page-customs" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">전체 통관</div><div class="stat-value" id="cu-stat-total">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">신고 진행</div><div class="stat-value" id="cu-stat-pending">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">수리 완료</div><div class="stat-value" id="cu-stat-cleared">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">C/O 발급</div><div class="stat-value" id="cu-stat-co">0</div><div class="stat-sub">건</div></div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">수출 통관 목록</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select class="form-input" id="cu-filter-status" onchange="loadCustoms()" style="font-size:12px;padding:5px 10px;width:auto;">
+                <option value="">전체 상태</option>
+                <option value="preparing">준비중</option>
+                <option value="declared">신고 완료</option>
+                <option value="examining">심사중</option>
+                <option value="cleared">수리 완료</option>
+                <option value="rejected">반려</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="openCustomsModal()">+ 통관 등록</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>통관번호</th><th>수출신고번호</th><th>거래처</th><th>선적번호</th><th>신고일</th><th>수리일</th><th>관세사</th><th>C/O</th><th>FTA</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="customs-list"><tr class="empty-row"><td colspan="11">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="toggleCustomsSqlBox()">
+            <span class="section-title">📋 Supabase 테이블 생성 SQL</span>
+            <span style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="customs-sql-box-wrap" style="display:none;padding:16px 20px;">
+            <div class="sql-box">CREATE TABLE customs_declarations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customs_number TEXT UNIQUE,
+  declaration_number TEXT,
+  shipment_id UUID REFERENCES shipments(id),
+  company_id UUID REFERENCES companies(id),
+  declaration_date DATE,
+  clearance_date DATE,
+  customs_broker TEXT,
+  hs_codes TEXT,
+  declared_value NUMERIC,
+  currency TEXT DEFAULT 'USD',
+  co_required BOOLEAN DEFAULT FALSE,
+  co_number TEXT,
+  co_issued_date DATE,
+  co_type TEXT,
+  fta_applicable BOOLEAN DEFAULT FALSE,
+  fta_agreement TEXT,
+  dg_goods BOOLEAN DEFAULT FALSE,
+  quarantine_required BOOLEAN DEFAULT FALSE,
+  quarantine_number TEXT,
+  status TEXT DEFAULT 'preparing',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- 문의 등록 모달 -->
@@ -775,6 +848,136 @@ textarea.form-input { resize: vertical; min-height: 72px; }
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('quotation-modal')">취소</button>
       <button class="btn btn-primary" onclick="saveQuotation()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 수출 통관 모달 -->
+<div class="modal-bg" id="customs-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="cu-modal-title">수출 통관 등록</span>
+      <button class="btn" onclick="closeModal('customs-modal')" style="padding:5px 9px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cu-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">통관번호 *</label>
+          <input type="text" class="form-input" id="cu-number" placeholder="자동 생성됨">
+        </div>
+        <div class="form-group">
+          <label class="form-label">수출신고번호</label>
+          <input type="text" class="form-input" id="cu-decl-number" placeholder="관세청 수출신고번호">
+        </div>
+        <div class="form-group">
+          <label class="form-label">거래처</label>
+          <select class="form-input" id="cu-company"><option value="">거래처 선택</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 선적</label>
+          <select class="form-input" id="cu-shipment"><option value="">선적 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">상태</label>
+          <select class="form-input" id="cu-status">
+            <option value="preparing">준비중</option>
+            <option value="declared">신고 완료</option>
+            <option value="examining">심사중</option>
+            <option value="cleared">수리 완료</option>
+            <option value="rejected">반려</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">관세사</label>
+          <input type="text" class="form-input" id="cu-broker" placeholder="관세사 또는 관세법인명">
+        </div>
+
+        <div class="section-divider">신고 정보</div>
+        <div class="form-group">
+          <label class="form-label">수출 신고일</label>
+          <input type="date" class="form-input" id="cu-decl-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">수리일</label>
+          <input type="date" class="form-input" id="cu-clear-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">신고 가격</label>
+          <input type="number" step="0.01" class="form-input" id="cu-value" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">통화</label>
+          <select class="form-input" id="cu-currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="KRW">KRW</option><option value="JPY">JPY</option></select>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">HS Code (복수 시 쉼표 구분)</label>
+          <input type="text" class="form-input" id="cu-hs" placeholder="예: 7616.99, 8471.30">
+        </div>
+
+        <div class="section-divider">원산지 증명서 (C/O)</div>
+        <div class="form-group">
+          <label class="form-label">C/O 필요</label>
+          <select class="form-input" id="cu-co-required"><option value="false">불필요</option><option value="true">필요</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">C/O 종류</label>
+          <select class="form-input" id="cu-co-type">
+            <option value="">선택</option>
+            <option value="일반 C/O">일반 C/O</option>
+            <option value="FTA C/O">FTA C/O</option>
+            <option value="EUR.1">EUR.1</option>
+            <option value="Form A">Form A (GSP)</option>
+            <option value="원산지신고서">원산지신고서</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">C/O 번호</label>
+          <input type="text" class="form-input" id="cu-co-number" placeholder="C/O 발급 번호">
+        </div>
+        <div class="form-group">
+          <label class="form-label">C/O 발급일</label>
+          <input type="date" class="form-input" id="cu-co-date">
+        </div>
+
+        <div class="section-divider">FTA / 특이사항</div>
+        <div class="form-group">
+          <label class="form-label">FTA 협정세율 적용</label>
+          <select class="form-input" id="cu-fta"><option value="false">미적용</option><option value="true">적용</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">FTA 협정</label>
+          <select class="form-input" id="cu-fta-agreement">
+            <option value="">선택</option>
+            <option value="한-EU FTA">한-EU FTA</option>
+            <option value="한-미 FTA">한-미 FTA</option>
+            <option value="한-중 FTA">한-중 FTA</option>
+            <option value="RCEP">RCEP</option>
+            <option value="한-ASEAN FTA">한-ASEAN FTA</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">위험물 (DG)</label>
+          <select class="form-input" id="cu-dg"><option value="false">해당 없음</option><option value="true">해당</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">검역 필요</label>
+          <select class="form-input" id="cu-quarantine"><option value="false">불필요</option><option value="true">필요</option></select>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">검역 번호</label>
+          <input type="text" class="form-input" id="cu-quarantine-num" placeholder="검역 확인 번호">
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">비고</label>
+          <textarea class="form-input" id="cu-notes" placeholder="통관 특이사항, 심사 결과 등"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('customs-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveCustoms()">✓ 저장</button>
     </div>
   </div>
 </div>
@@ -1193,7 +1396,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], currentPage = 'inquiry';
+let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], currentPage = 'inquiry';
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -1206,10 +1409,10 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','order','production','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','production','customs','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',shipment:'선적 관리',document:'서류 생성'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
@@ -1218,6 +1421,7 @@ function showPage(page, el) {
     quotation: `<button class="btn btn-primary" onclick="openQuotationModal()">+ 견적 등록</button>`,
     order: `<button class="btn btn-primary" onclick="openOrderModal()">+ 수주 등록</button>`,
     production: `<button class="btn btn-primary" onclick="openProductionModal()">+ 생산 지시</button>`,
+    customs: `<button class="btn btn-primary" onclick="openCustomsModal()">+ 통관 등록</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
     document: ``
   };
@@ -1227,6 +1431,7 @@ function showPage(page, el) {
   if (page==='quotation') loadQuotations();
   if (page==='order') loadOrders();
   if (page==='production') loadProduction();
+  if (page==='customs') loadCustoms();
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
 }
@@ -1245,6 +1450,7 @@ async function init() {
     try { shipments = await api('GET','shipments?order=created_at.desc'); updateShipmentStats(shipments); } catch(e) { /* shipments 테이블 미생성 시 무시 */ }
     try { orders = await api('GET','orders?order=created_at.desc'); updateOrderStats(orders); } catch(e) { /* orders 테이블 미생성 시 무시 */ }
     try { productionOrders = await api('GET','production_orders?order=created_at.desc'); updateProductionStats(productionOrders); } catch(e) { /* production_orders 테이블 미생성 시 무시 */ }
+    try { customsDecls = await api('GET','customs_declarations?order=created_at.desc'); updateCustomsStats(customsDecls); } catch(e) { /* customs_declarations 테이블 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
@@ -1906,6 +2112,155 @@ async function printQuotation(id) {
 
   document.getElementById('qt-print-content').innerHTML = html;
   document.getElementById('qt-print-modal').classList.add('open');
+}
+
+// ====================== 수출 통관 모듈 ======================
+
+const cuStatusLabel = {preparing:'준비중',declared:'신고완료',examining:'심사중',cleared:'수리완료',rejected:'반려'};
+const cuStatusClass = {preparing:'s-received',declared:'s-reviewing',examining:'s-negotiating',cleared:'s-won',rejected:'s-lost'};
+
+async function loadCustoms() {
+  const status = document.getElementById('cu-filter-status') ? document.getElementById('cu-filter-status').value : '';
+  let path = 'customs_declarations?order=created_at.desc';
+  if (status) path += `&status=eq.${status}`;
+  try {
+    customsDecls = await api('GET', path);
+    updateCustomsStats(customsDecls);
+    renderCustoms(customsDecls);
+  } catch(e) {
+    document.getElementById('customs-list').innerHTML = '<tr class="empty-row"><td colspan="11">Supabase에 customs_declarations 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
+  }
+}
+
+function updateCustomsStats(data) {
+  document.getElementById('cu-stat-total').textContent = data.length;
+  document.getElementById('cu-stat-pending').textContent = data.filter(c=>c.status==='declared'||c.status==='examining').length;
+  document.getElementById('cu-stat-cleared').textContent = data.filter(c=>c.status==='cleared').length;
+  document.getElementById('cu-stat-co').textContent = data.filter(c=>c.co_required&&c.co_number).length;
+  document.getElementById('nav-customs-badge').textContent = data.length;
+}
+
+function renderCustoms(data) {
+  const tbody = document.getElementById('customs-list');
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="11">등록된 통관 건이 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = data.map(c => {
+    const co = companies.find(x=>x.id===c.company_id);
+    const sh = shipments.find(x=>x.id===c.shipment_id);
+    const coBadge = c.co_required ? (c.co_number ? `<span class="tag" style="background:#e6f4ea;color:#1e7e34;">${c.co_type||'C/O'}</span>` : `<span class="tag" style="background:#fff3cd;color:#856404;">미발급</span>`) : '-';
+    const ftaBadge = c.fta_applicable ? `<span class="tag" style="background:#e8f4fd;color:#1a6db5;">${c.fta_agreement||'FTA'}</span>` : '-';
+    return `<tr>
+      <td><strong>${c.customs_number||'-'}</strong></td>
+      <td>${c.declaration_number||'-'}</td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${sh?sh.shipment_number:'-'}</td>
+      <td>${c.declaration_date||'-'}</td>
+      <td>${c.clearance_date||'-'}</td>
+      <td>${c.customs_broker||'-'}</td>
+      <td>${coBadge}</td>
+      <td>${ftaBadge}</td>
+      <td><span class="status ${cuStatusClass[c.status]||'s-received'}">${cuStatusLabel[c.status]||c.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn" onclick="editCustoms('${c.id}')">수정</button>
+        <button class="action-btn del" onclick="deleteCustoms('${c.id}')">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function generateCustomsNumber() {
+  const now = new Date();
+  const prefix = `EX-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-`;
+  try {
+    const list = await api('GET',`customs_declarations?customs_number=like.${prefix}*&order=customs_number.desc&limit=1`);
+    let next = 1;
+    if (list && list[0]) next = parseInt(list[0].customs_number.split('-').pop(),10) + 1;
+    return `${prefix}${String(next).padStart(3,'0')}`;
+  } catch(e) { return `${prefix}001`; }
+}
+
+async function openCustomsModal(data=null) {
+  const csel = document.getElementById('cu-company');
+  csel.innerHTML = '<option value="">거래처 선택</option>' + companies.map(c=>`<option value="${c.id}">${c.company_name}${c.country?' ('+c.country+')':''}</option>`).join('');
+  const ssel = document.getElementById('cu-shipment');
+  ssel.innerHTML = '<option value="">선적 선택 (선택사항)</option>' + shipments.map(s=>{
+    const co = companies.find(c=>c.id===s.company_id);
+    return `<option value="${s.id}">${s.shipment_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  document.getElementById('cu-id').value = data?data.id:'';
+  document.getElementById('cu-modal-title').textContent = data?'수출 통관 수정':'수출 통관 등록';
+  document.getElementById('cu-number').value = data?(data.customs_number||''):(await generateCustomsNumber());
+  document.getElementById('cu-decl-number').value = data?(data.declaration_number||''):'';
+  document.getElementById('cu-company').value = data?(data.company_id||''):'';
+  document.getElementById('cu-shipment').value = data?(data.shipment_id||''):'';
+  document.getElementById('cu-status').value = data?(data.status||'preparing'):'preparing';
+  document.getElementById('cu-broker').value = data?(data.customs_broker||''):'';
+  document.getElementById('cu-decl-date').value = data?(data.declaration_date||''):'';
+  document.getElementById('cu-clear-date').value = data?(data.clearance_date||''):'';
+  document.getElementById('cu-value').value = data?(data.declared_value||''):'';
+  document.getElementById('cu-currency').value = data?(data.currency||'USD'):'USD';
+  document.getElementById('cu-hs').value = data?(data.hs_codes||''):'';
+  document.getElementById('cu-co-required').value = data?String(data.co_required):'false';
+  document.getElementById('cu-co-type').value = data?(data.co_type||''):'';
+  document.getElementById('cu-co-number').value = data?(data.co_number||''):'';
+  document.getElementById('cu-co-date').value = data?(data.co_issued_date||''):'';
+  document.getElementById('cu-fta').value = data?String(data.fta_applicable):'false';
+  document.getElementById('cu-fta-agreement').value = data?(data.fta_agreement||''):'';
+  document.getElementById('cu-dg').value = data?String(data.dg_goods):'false';
+  document.getElementById('cu-quarantine').value = data?String(data.quarantine_required):'false';
+  document.getElementById('cu-quarantine-num').value = data?(data.quarantine_number||''):'';
+  document.getElementById('cu-notes').value = data?(data.notes||''):'';
+  document.getElementById('customs-modal').classList.add('open');
+}
+
+async function editCustoms(id) {
+  const data = await api('GET',`customs_declarations?id=eq.${id}`);
+  if (data&&data[0]) openCustomsModal(data[0]);
+}
+
+async function deleteCustoms(id) {
+  if (!confirm('이 통관 건을 삭제하시겠습니까?')) return;
+  await api('DELETE',`customs_declarations?id=eq.${id}`);
+  showToast('삭제되었습니다.','success');
+  await loadCustoms();
+}
+
+async function saveCustoms() {
+  const id = document.getElementById('cu-id').value;
+  const body = {
+    customs_number: document.getElementById('cu-number').value,
+    declaration_number: document.getElementById('cu-decl-number').value,
+    company_id: document.getElementById('cu-company').value||null,
+    shipment_id: document.getElementById('cu-shipment').value||null,
+    status: document.getElementById('cu-status').value,
+    customs_broker: document.getElementById('cu-broker').value,
+    declaration_date: document.getElementById('cu-decl-date').value||null,
+    clearance_date: document.getElementById('cu-clear-date').value||null,
+    declared_value: parseFloat(document.getElementById('cu-value').value)||null,
+    currency: document.getElementById('cu-currency').value,
+    hs_codes: document.getElementById('cu-hs').value,
+    co_required: document.getElementById('cu-co-required').value==='true',
+    co_type: document.getElementById('cu-co-type').value,
+    co_number: document.getElementById('cu-co-number').value,
+    co_issued_date: document.getElementById('cu-co-date').value||null,
+    fta_applicable: document.getElementById('cu-fta').value==='true',
+    fta_agreement: document.getElementById('cu-fta-agreement').value,
+    dg_goods: document.getElementById('cu-dg').value==='true',
+    quarantine_required: document.getElementById('cu-quarantine').value==='true',
+    quarantine_number: document.getElementById('cu-quarantine-num').value,
+    notes: document.getElementById('cu-notes').value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (id) { await api('PATCH',`customs_declarations?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
+    else { await api('POST','customs_declarations',body); showToast('등록되었습니다.','success'); }
+    closeModal('customs-modal');
+    await loadCustoms();
+  } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+function toggleCustomsSqlBox() {
+  const el = document.getElementById('customs-sql-box-wrap');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ====================== 생산/발주 모듈 ======================
