@@ -172,6 +172,11 @@ textarea.form-input { resize: vertical; min-height: 72px; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
         수주 등록 <span class="badge" id="nav-ord-badge" style="background:#5b4ec8;">0</span>
       </div>
+      <div class="nav-section">생산</div>
+      <div class="nav-item" id="nav-production" onclick="showPage('production',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        생산/발주 관리 <span class="badge" id="nav-prod-badge" style="background:#1e7e34;">0</span>
+      </div>
       <div class="nav-section">선적</div>
       <div class="nav-item" id="nav-shipment" onclick="showPage('shipment',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.5H2l4-8h12l4 8z"/></svg>
@@ -427,6 +432,70 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   lc_issuing_bank TEXT,
   special_requirements TEXT,
   status TEXT DEFAULT 'received',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+      <!-- 생산/발주 관리 -->
+      <div id="page-production" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">전체 생산</div><div class="stat-value" id="pr-stat-total">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">생산중</div><div class="stat-value" id="pr-stat-inprogress">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">QC 진행</div><div class="stat-value" id="pr-stat-qc">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">납기 지연</div><div class="stat-value" id="pr-stat-delayed" style="color:#c62828;">0</div><div class="stat-sub">건</div></div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">생산 지시 목록</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select class="form-input" id="pr-filter-status" onchange="loadProduction()" style="font-size:12px;padding:5px 10px;width:auto;">
+                <option value="">전체 상태</option>
+                <option value="planned">생산 예정</option>
+                <option value="in_progress">생산중</option>
+                <option value="qc">QC 진행</option>
+                <option value="completed">완료</option>
+                <option value="cancelled">취소</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="openProductionModal()">+ 생산 지시</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>생산번호</th><th>수주번호</th><th>거래처</th><th>품목명</th><th>수량</th><th>생산 시작</th><th>완료 예정</th><th>실제 완료</th><th>QC</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="production-list"><tr class="empty-row"><td colspan="11">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="toggleProdSqlBox()">
+            <span class="section-title">📋 Supabase 테이블 생성 SQL</span>
+            <span style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="prod-sql-box-wrap" style="display:none;padding:16px 20px;">
+            <div class="sql-box">CREATE TABLE production_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  production_number TEXT UNIQUE,
+  order_id UUID REFERENCES orders(id),
+  company_id UUID REFERENCES companies(id),
+  product_name TEXT,
+  quantity NUMERIC,
+  unit TEXT DEFAULT 'PCS',
+  planned_start DATE,
+  planned_end DATE,
+  actual_start DATE,
+  actual_end DATE,
+  qc_status TEXT DEFAULT 'pending',
+  qc_date DATE,
+  qc_inspector TEXT,
+  qc_report_number TEXT,
+  qc_notes TEXT,
+  status TEXT DEFAULT 'planned',
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -706,6 +775,110 @@ textarea.form-input { resize: vertical; min-height: 72px; }
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('quotation-modal')">취소</button>
       <button class="btn btn-primary" onclick="saveQuotation()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 생산 지시 모달 -->
+<div class="modal-bg" id="production-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="pr-modal-title2">생산 지시 등록</span>
+      <button class="btn" onclick="closeModal('production-modal')" style="padding:5px 9px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pr-id2">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">생산번호 *</label>
+          <input type="text" class="form-input" id="pr-number2" placeholder="자동 생성됨">
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 수주</label>
+          <select class="form-input" id="pr-order" onchange="fillProductionFromOrder()"><option value="">수주 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">거래처</label>
+          <select class="form-input" id="pr-company2"><option value="">거래처 선택</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">상태</label>
+          <select class="form-input" id="pr-status2">
+            <option value="planned">생산 예정</option>
+            <option value="in_progress">생산중</option>
+            <option value="qc">QC 진행</option>
+            <option value="completed">완료</option>
+            <option value="cancelled">취소</option>
+          </select>
+        </div>
+
+        <div class="section-divider">품목 / 수량</div>
+        <div class="form-group form-full">
+          <label class="form-label">품목명 *</label>
+          <input type="text" class="form-input" id="pr-product2" placeholder="생산할 품목명">
+        </div>
+        <div class="form-group">
+          <label class="form-label">수량</label>
+          <input type="number" class="form-input" id="pr-qty2" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">단위</label>
+          <select class="form-input" id="pr-unit2"><option value="PCS">PCS</option><option value="SET">SET</option><option value="KG">KG</option><option value="MT">MT</option><option value="CBM">CBM</option></select>
+        </div>
+
+        <div class="section-divider">생산 일정</div>
+        <div class="form-group">
+          <label class="form-label">계획 시작일</label>
+          <input type="date" class="form-input" id="pr-plan-start">
+        </div>
+        <div class="form-group">
+          <label class="form-label">계획 완료일</label>
+          <input type="date" class="form-input" id="pr-plan-end">
+        </div>
+        <div class="form-group">
+          <label class="form-label">실제 시작일</label>
+          <input type="date" class="form-input" id="pr-actual-start">
+        </div>
+        <div class="form-group">
+          <label class="form-label">실제 완료일</label>
+          <input type="date" class="form-input" id="pr-actual-end">
+        </div>
+
+        <div class="section-divider">품질 검사 (QC)</div>
+        <div class="form-group">
+          <label class="form-label">QC 결과</label>
+          <select class="form-input" id="pr-qc-status">
+            <option value="pending">미검사</option>
+            <option value="pass">합격</option>
+            <option value="fail">불합격</option>
+            <option value="conditional">조건부 합격</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">QC 검사일</label>
+          <input type="date" class="form-input" id="pr-qc-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">검사자</label>
+          <input type="text" class="form-input" id="pr-qc-inspector" placeholder="검사자명">
+        </div>
+        <div class="form-group">
+          <label class="form-label">검사 성적서 번호</label>
+          <input type="text" class="form-input" id="pr-qc-report" placeholder="성적서 번호">
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">QC 비고</label>
+          <textarea class="form-input" id="pr-qc-notes" placeholder="불량 내용, 조치사항 등"></textarea>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">비고</label>
+          <textarea class="form-input" id="pr-notes2" placeholder="생산 지시 특이사항"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('production-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveProduction()">✓ 저장</button>
     </div>
   </div>
 </div>
@@ -1020,7 +1193,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-let companies = [], products = [], quotations = [], shipments = [], orders = [], currentPage = 'inquiry';
+let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], currentPage = 'inquiry';
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -1033,10 +1206,10 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','order','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','production','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',shipment:'선적 관리',document:'서류 생성'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',shipment:'선적 관리',document:'서류 생성'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
@@ -1044,6 +1217,7 @@ function showPage(page, el) {
     product: `<button class="btn btn-primary" onclick="openProductModal()">+ 품목 등록</button>`,
     quotation: `<button class="btn btn-primary" onclick="openQuotationModal()">+ 견적 등록</button>`,
     order: `<button class="btn btn-primary" onclick="openOrderModal()">+ 수주 등록</button>`,
+    production: `<button class="btn btn-primary" onclick="openProductionModal()">+ 생산 지시</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
     document: ``
   };
@@ -1052,6 +1226,7 @@ function showPage(page, el) {
   if (page==='product') renderProducts();
   if (page==='quotation') loadQuotations();
   if (page==='order') loadOrders();
+  if (page==='production') loadProduction();
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
 }
@@ -1069,6 +1244,7 @@ async function init() {
     updateQtStats();
     try { shipments = await api('GET','shipments?order=created_at.desc'); updateShipmentStats(shipments); } catch(e) { /* shipments 테이블 미생성 시 무시 */ }
     try { orders = await api('GET','orders?order=created_at.desc'); updateOrderStats(orders); } catch(e) { /* orders 테이블 미생성 시 무시 */ }
+    try { productionOrders = await api('GET','production_orders?order=created_at.desc'); updateProductionStats(productionOrders); } catch(e) { /* production_orders 테이블 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
@@ -1730,6 +1906,161 @@ async function printQuotation(id) {
 
   document.getElementById('qt-print-content').innerHTML = html;
   document.getElementById('qt-print-modal').classList.add('open');
+}
+
+// ====================== 생산/발주 모듈 ======================
+
+const prStatusLabel = {planned:'생산 예정',in_progress:'생산중',qc:'QC 진행',completed:'완료',cancelled:'취소'};
+const prStatusClass = {planned:'s-received',in_progress:'s-reviewing',qc:'s-negotiating',completed:'s-won',cancelled:'s-lost'};
+const qcLabel = {pending:'미검사',pass:'합격',fail:'불합격',conditional:'조건부합격'};
+const qcClass = {pending:'s-received',pass:'s-quoted',fail:'s-lost',conditional:'s-negotiating'};
+
+async function loadProduction() {
+  const status = document.getElementById('pr-filter-status') ? document.getElementById('pr-filter-status').value : '';
+  let path = 'production_orders?order=created_at.desc';
+  if (status) path += `&status=eq.${status}`;
+  try {
+    productionOrders = await api('GET', path);
+    updateProductionStats(productionOrders);
+    renderProduction(productionOrders);
+  } catch(e) {
+    document.getElementById('production-list').innerHTML = '<tr class="empty-row"><td colspan="11">Supabase에 production_orders 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
+  }
+}
+
+function updateProductionStats(data) {
+  const today = new Date().toISOString().split('T')[0];
+  const delayed = data.filter(p => p.planned_end && p.planned_end < today && p.status !== 'completed' && p.status !== 'cancelled').length;
+  document.getElementById('pr-stat-total').textContent = data.length;
+  document.getElementById('pr-stat-inprogress').textContent = data.filter(p=>p.status==='in_progress').length;
+  document.getElementById('pr-stat-qc').textContent = data.filter(p=>p.status==='qc').length;
+  document.getElementById('pr-stat-delayed').textContent = delayed;
+  document.getElementById('nav-prod-badge').textContent = data.length;
+}
+
+function renderProduction(data) {
+  const tbody = document.getElementById('production-list');
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="11">등록된 생산 지시가 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = data.map(p => {
+    const co = companies.find(c=>c.id===p.company_id);
+    const ord = orders.find(o=>o.id===p.order_id);
+    const today = new Date().toISOString().split('T')[0];
+    const isDelayed = p.planned_end && p.planned_end < today && p.status !== 'completed' && p.status !== 'cancelled';
+    const endCell = p.planned_end ? `<span class="${isDelayed?'date-warn':''}">${p.planned_end}${isDelayed?' ⚠':''}` : '-';
+    return `<tr>
+      <td><strong>${p.production_number||'-'}</strong></td>
+      <td>${ord?ord.order_number:'-'}</td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${p.product_name||'-'}</td>
+      <td>${p.quantity?Number(p.quantity).toLocaleString()+' '+(p.unit||''):'-'}</td>
+      <td>${p.planned_start||'-'}</td>
+      <td>${endCell}</td>
+      <td>${p.actual_end||'-'}</td>
+      <td><span class="status ${qcClass[p.qc_status]||'s-received'}">${qcLabel[p.qc_status]||'-'}</span></td>
+      <td><span class="status ${prStatusClass[p.status]||'s-received'}">${prStatusLabel[p.status]||p.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn" onclick="editProduction('${p.id}')">수정</button>
+        <button class="action-btn del" onclick="deleteProduction('${p.id}')">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function generateProductionNumber() {
+  const now = new Date();
+  const prefix = `PR-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-`;
+  try {
+    const list = await api('GET',`production_orders?production_number=like.${prefix}*&order=production_number.desc&limit=1`);
+    let next = 1;
+    if (list && list[0]) next = parseInt(list[0].production_number.split('-').pop(),10) + 1;
+    return `${prefix}${String(next).padStart(3,'0')}`;
+  } catch(e) { return `${prefix}001`; }
+}
+
+async function openProductionModal(data=null) {
+  const csel = document.getElementById('pr-company2');
+  csel.innerHTML = '<option value="">거래처 선택</option>' + companies.map(c=>`<option value="${c.id}">${c.company_name}${c.country?' ('+c.country+')':''}</option>`).join('');
+  const osel = document.getElementById('pr-order');
+  osel.innerHTML = '<option value="">수주 선택 (선택사항)</option>' + orders.map(o=>{
+    const co = companies.find(c=>c.id===o.company_id);
+    return `<option value="${o.id}">${o.order_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  document.getElementById('pr-id2').value = data?data.id:'';
+  document.getElementById('pr-modal-title2').textContent = data?'생산 지시 수정':'생산 지시 등록';
+  document.getElementById('pr-number2').value = data?(data.production_number||''):(await generateProductionNumber());
+  document.getElementById('pr-order').value = data?(data.order_id||''):'';
+  document.getElementById('pr-company2').value = data?(data.company_id||''):'';
+  document.getElementById('pr-status2').value = data?(data.status||'planned'):'planned';
+  document.getElementById('pr-product2').value = data?(data.product_name||''):'';
+  document.getElementById('pr-qty2').value = data?(data.quantity||''):'';
+  document.getElementById('pr-unit2').value = data?(data.unit||'PCS'):'PCS';
+  document.getElementById('pr-plan-start').value = data?(data.planned_start||''):'';
+  document.getElementById('pr-plan-end').value = data?(data.planned_end||''):'';
+  document.getElementById('pr-actual-start').value = data?(data.actual_start||''):'';
+  document.getElementById('pr-actual-end').value = data?(data.actual_end||''):'';
+  document.getElementById('pr-qc-status').value = data?(data.qc_status||'pending'):'pending';
+  document.getElementById('pr-qc-date').value = data?(data.qc_date||''):'';
+  document.getElementById('pr-qc-inspector').value = data?(data.qc_inspector||''):'';
+  document.getElementById('pr-qc-report').value = data?(data.qc_report_number||''):'';
+  document.getElementById('pr-qc-notes').value = data?(data.qc_notes||''):'';
+  document.getElementById('pr-notes2').value = data?(data.notes||''):'';
+  document.getElementById('production-modal').classList.add('open');
+}
+
+function fillProductionFromOrder() {
+  const ordId = document.getElementById('pr-order').value;
+  if (!ordId) return;
+  const ord = orders.find(o=>o.id===ordId);
+  if (!ord) return;
+  document.getElementById('pr-company2').value = ord.company_id||'';
+  if (ord.delivery_date) document.getElementById('pr-plan-end').value = ord.delivery_date;
+}
+
+async function editProduction(id) {
+  const data = await api('GET',`production_orders?id=eq.${id}`);
+  if (data&&data[0]) openProductionModal(data[0]);
+}
+
+async function deleteProduction(id) {
+  if (!confirm('이 생산 지시를 삭제하시겠습니까?')) return;
+  await api('DELETE',`production_orders?id=eq.${id}`);
+  showToast('삭제되었습니다.','success');
+  await loadProduction();
+}
+
+async function saveProduction() {
+  const id = document.getElementById('pr-id2').value;
+  const body = {
+    production_number: document.getElementById('pr-number2').value,
+    order_id: document.getElementById('pr-order').value||null,
+    company_id: document.getElementById('pr-company2').value||null,
+    status: document.getElementById('pr-status2').value,
+    product_name: document.getElementById('pr-product2').value,
+    quantity: parseFloat(document.getElementById('pr-qty2').value)||null,
+    unit: document.getElementById('pr-unit2').value,
+    planned_start: document.getElementById('pr-plan-start').value||null,
+    planned_end: document.getElementById('pr-plan-end').value||null,
+    actual_start: document.getElementById('pr-actual-start').value||null,
+    actual_end: document.getElementById('pr-actual-end').value||null,
+    qc_status: document.getElementById('pr-qc-status').value,
+    qc_date: document.getElementById('pr-qc-date').value||null,
+    qc_inspector: document.getElementById('pr-qc-inspector').value,
+    qc_report_number: document.getElementById('pr-qc-report').value,
+    qc_notes: document.getElementById('pr-qc-notes').value,
+    notes: document.getElementById('pr-notes2').value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (id) { await api('PATCH',`production_orders?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
+    else { await api('POST','production_orders',body); showToast('등록되었습니다.','success'); }
+    closeModal('production-modal');
+    await loadProduction();
+  } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+function toggleProdSqlBox() {
+  const el = document.getElementById('prod-sql-box-wrap');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ====================== 수주 모듈 ======================
