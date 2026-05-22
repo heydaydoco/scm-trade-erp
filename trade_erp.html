@@ -168,7 +168,10 @@ textarea.form-input { resize: vertical; min-height: 72px; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         견적 관리 <span class="badge" id="nav-qt-badge" style="background:#1e7e34;">0</span>
       </div>
-      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>수주 등록 <span class="soon">준비중</span></div>
+      <div class="nav-item" id="nav-order" onclick="showPage('order',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        수주 등록 <span class="badge" id="nav-ord-badge" style="background:#5b4ec8;">0</span>
+      </div>
       <div class="nav-section">선적</div>
       <div class="nav-item" id="nav-shipment" onclick="showPage('shipment',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.5H2l4-8h12l4 8z"/></svg>
@@ -358,6 +361,72 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   cutoff_date DATE,
   pickup_date DATE,
   status TEXT DEFAULT 'preparing',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+      <!-- 수주 등록 -->
+      <div id="page-order" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">전체 수주</div><div class="stat-value" id="ord-stat-total">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">수주 확인</div><div class="stat-value" id="ord-stat-confirmed">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">생산중</div><div class="stat-value" id="ord-stat-production">0</div><div class="stat-sub">건</div></div>
+          <div class="stat-card"><div class="stat-label">납기 7일 이내</div><div class="stat-value" id="ord-stat-deadline" style="color:#c62828;">0</div><div class="stat-sub">건</div></div>
+        </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">수주 목록</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select class="form-input" id="ord-filter-status" onchange="loadOrders()" style="font-size:12px;padding:5px 10px;width:auto;">
+                <option value="">전체 상태</option>
+                <option value="received">PO 접수</option>
+                <option value="confirmed">수주 확인</option>
+                <option value="in_production">생산중</option>
+                <option value="ready">선적 준비</option>
+                <option value="shipped">선적완료</option>
+                <option value="completed">완료</option>
+                <option value="cancelled">취소</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="openOrderModal()">+ 수주 등록</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>수주번호</th><th>바이어 PO#</th><th>거래처</th><th>견적번호</th><th>수주일</th><th>납기일</th><th>총액</th><th>결제조건</th><th>L/C</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="order-list"><tr class="empty-row"><td colspan="11">연결 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-header" style="cursor:pointer;" onclick="toggleOrderSqlBox()">
+            <span class="section-title">📋 Supabase 테이블 생성 SQL</span>
+            <span style="font-size:12px;color:#888;">클릭하여 펼치기/접기</span>
+          </div>
+          <div id="order-sql-box-wrap" style="display:none;padding:16px 20px;">
+            <div class="sql-box">CREATE TABLE orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_number TEXT UNIQUE,
+  quotation_id UUID REFERENCES quotations(id),
+  company_id UUID REFERENCES companies(id),
+  po_number TEXT,
+  order_date DATE DEFAULT CURRENT_DATE,
+  delivery_date DATE,
+  currency TEXT DEFAULT 'USD',
+  total_amount NUMERIC DEFAULT 0,
+  incoterms TEXT,
+  payment_terms TEXT,
+  lc_required BOOLEAN DEFAULT FALSE,
+  lc_number TEXT,
+  lc_expiry_date DATE,
+  lc_issuing_bank TEXT,
+  special_requirements TEXT,
+  status TEXT DEFAULT 'received',
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -641,6 +710,122 @@ textarea.form-input { resize: vertical; min-height: 72px; }
   </div>
 </div>
 
+<!-- 수주 모달 -->
+<div class="modal-bg" id="order-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="ord-modal-title">수주 등록</span>
+      <button class="btn" onclick="closeModal('order-modal')" style="padding:5px 9px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ord-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">수주번호 *</label>
+          <input type="text" class="form-input" id="ord-number" placeholder="자동 생성됨">
+        </div>
+        <div class="form-group">
+          <label class="form-label">바이어 PO 번호</label>
+          <input type="text" class="form-input" id="ord-po" placeholder="바이어 발행 PO 번호">
+        </div>
+        <div class="form-group">
+          <label class="form-label">거래처 *</label>
+          <select class="form-input" id="ord-company"><option value="">거래처 선택</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">연결 견적</label>
+          <select class="form-input" id="ord-quotation" onchange="fillOrderFromQuotation()"><option value="">견적 선택 (선택사항)</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">수주일 *</label>
+          <input type="date" class="form-input" id="ord-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">납기 예정일 *</label>
+          <input type="date" class="form-input" id="ord-delivery">
+        </div>
+
+        <div class="section-divider">거래 조건</div>
+        <div class="form-group">
+          <label class="form-label">통화</label>
+          <select class="form-input" id="ord-currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="KRW">KRW</option><option value="JPY">JPY</option><option value="CNY">CNY</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">수주 총액</label>
+          <input type="number" step="0.01" class="form-input" id="ord-amount" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Incoterms</label>
+          <select class="form-input" id="ord-incoterms"><option value="">선택</option><option value="EXW">EXW</option><option value="FOB">FOB</option><option value="CIF">CIF</option><option value="CIP">CIP</option><option value="DAP">DAP</option><option value="DDP">DDP</option><option value="CPT">CPT</option><option value="FCA">FCA</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">결제조건</label>
+          <select class="form-input" id="ord-payment"><option value="">선택</option><option value="T/T 30% in advance">T/T 30% in advance</option><option value="T/T 50% in advance">T/T 50% in advance</option><option value="T/T 100% in advance">T/T 100% in advance</option><option value="L/C at sight">L/C at sight</option><option value="L/C 30days">L/C 30days</option><option value="L/C 60days">L/C 60days</option><option value="L/C 90days">L/C 90days</option><option value="CAD">CAD</option><option value="O/A 30days">O/A 30days</option><option value="O/A 60days">O/A 60days</option><option value="O/A 90days">O/A 90days</option></select>
+        </div>
+
+        <div class="section-divider">L/C 정보 (L/C 거래 시)</div>
+        <div class="form-group">
+          <label class="form-label">L/C 필요</label>
+          <select class="form-input" id="ord-lc-required"><option value="false">불필요</option><option value="true">필요</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">L/C 번호</label>
+          <input type="text" class="form-input" id="ord-lc-number" placeholder="L/C 개설 번호">
+        </div>
+        <div class="form-group">
+          <label class="form-label">L/C 만료일</label>
+          <input type="date" class="form-input" id="ord-lc-expiry">
+        </div>
+        <div class="form-group">
+          <label class="form-label">L/C 발행 은행</label>
+          <input type="text" class="form-input" id="ord-lc-bank" placeholder="예: Citibank, HSBC">
+        </div>
+
+        <div class="section-divider">기타</div>
+        <div class="form-group">
+          <label class="form-label">상태</label>
+          <select class="form-input" id="ord-status">
+            <option value="received">PO 접수</option>
+            <option value="confirmed">수주 확인</option>
+            <option value="in_production">생산중</option>
+            <option value="ready">선적 준비</option>
+            <option value="shipped">선적완료</option>
+            <option value="completed">완료</option>
+            <option value="cancelled">취소</option>
+          </select>
+        </div>
+        <div class="form-group"></div>
+        <div class="form-group form-full">
+          <label class="form-label">바이어 특이사항 / 요구사항</label>
+          <textarea class="form-input" id="ord-special" placeholder="특별 포장 사양, 라벨링 요구, 검사 조건 등"></textarea>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">비고</label>
+          <textarea class="form-input" id="ord-notes"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('order-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveOrder()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order Confirmation 인쇄 모달 -->
+<div class="modal-bg" id="oc-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header no-print">
+      <span class="modal-title">Order Confirmation</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="window.print()">🖨️ 인쇄 / PDF</button>
+        <button class="btn" onclick="closeModal('oc-modal')" style="padding:5px 9px;">✕</button>
+      </div>
+    </div>
+    <div id="oc-content"></div>
+  </div>
+</div>
+
 <!-- 선적 모달 -->
 <div class="modal-bg" id="shipment-modal">
   <div class="modal modal-lg">
@@ -835,7 +1020,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
-let companies = [], products = [], quotations = [], shipments = [], currentPage = 'inquiry';
+let companies = [], products = [], quotations = [], shipments = [], orders = [], currentPage = 'inquiry';
 let qtLineItems = [];
 
 function showToast(msg, type='') {
@@ -848,16 +1033,17 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','shipment','document'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',shipment:'선적 관리',document:'서류 생성'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',shipment:'선적 관리',document:'서류 생성'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
     company: `<button class="btn btn-primary" onclick="openCompanyModal()">+ 거래처 등록</button>`,
     product: `<button class="btn btn-primary" onclick="openProductModal()">+ 품목 등록</button>`,
     quotation: `<button class="btn btn-primary" onclick="openQuotationModal()">+ 견적 등록</button>`,
+    order: `<button class="btn btn-primary" onclick="openOrderModal()">+ 수주 등록</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
     document: ``
   };
@@ -865,6 +1051,7 @@ function showPage(page, el) {
   if (page==='company') renderCompanies();
   if (page==='product') renderProducts();
   if (page==='quotation') loadQuotations();
+  if (page==='order') loadOrders();
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
 }
@@ -881,6 +1068,7 @@ async function init() {
     await loadInquiries();
     updateQtStats();
     try { shipments = await api('GET','shipments?order=created_at.desc'); updateShipmentStats(shipments); } catch(e) { /* shipments 테이블 미생성 시 무시 */ }
+    try { orders = await api('GET','orders?order=created_at.desc'); updateOrderStats(orders); } catch(e) { /* orders 테이블 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
@@ -1542,6 +1730,226 @@ async function printQuotation(id) {
 
   document.getElementById('qt-print-content').innerHTML = html;
   document.getElementById('qt-print-modal').classList.add('open');
+}
+
+// ====================== 수주 모듈 ======================
+
+const ordStatusLabel = {received:'PO 접수',confirmed:'수주 확인',in_production:'생산중',ready:'선적 준비',shipped:'선적완료',completed:'완료',cancelled:'취소'};
+const ordStatusClass = {received:'s-received',confirmed:'s-quoted',in_production:'s-reviewing',ready:'s-negotiating',shipped:'s-sent',completed:'s-won',cancelled:'s-lost'};
+
+async function loadOrders() {
+  const status = document.getElementById('ord-filter-status') ? document.getElementById('ord-filter-status').value : '';
+  let path = 'orders?order=created_at.desc';
+  if (status) path += `&status=eq.${status}`;
+  try {
+    orders = await api('GET', path);
+    updateOrderStats(orders);
+    renderOrders(orders);
+  } catch(e) {
+    document.getElementById('order-list').innerHTML = '<tr class="empty-row"><td colspan="11">Supabase에 orders 테이블을 먼저 생성해주세요. (하단 SQL 참고)</td></tr>';
+  }
+}
+
+function updateOrderStats(data) {
+  const deadline7 = data.filter(o => { const d = daysUntil(o.delivery_date); return d !== null && d >= 0 && d <= 7; }).length;
+  document.getElementById('ord-stat-total').textContent = data.length;
+  document.getElementById('ord-stat-confirmed').textContent = data.filter(o=>o.status==='confirmed').length;
+  document.getElementById('ord-stat-production').textContent = data.filter(o=>o.status==='in_production').length;
+  document.getElementById('ord-stat-deadline').textContent = deadline7;
+  document.getElementById('nav-ord-badge').textContent = data.length;
+}
+
+function renderOrders(data) {
+  const tbody = document.getElementById('order-list');
+  if (!data.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="11">등록된 수주가 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = data.map(o => {
+    const co = companies.find(c=>c.id===o.company_id);
+    const qt = quotations.find(q=>q.id===o.quotation_id);
+    const sym = currencySymbol[o.currency]||'';
+    const lcBadge = o.lc_required ? `<span class="tag" style="background:#e8f4fd;color:#1a6db5;">L/C</span>` : '-';
+    return `<tr>
+      <td><strong>${o.order_number||'-'}</strong></td>
+      <td>${o.po_number||'-'}</td>
+      <td>${co?co.company_name:'-'}</td>
+      <td>${qt?qt.quotation_number:'-'}</td>
+      <td>${o.order_date||'-'}</td>
+      <td>${dateCell(o.delivery_date)}</td>
+      <td style="font-weight:600;color:#1a6db5;">${sym}${fmt(o.total_amount)}</td>
+      <td><span style="font-size:11px;">${o.payment_terms||'-'}</span></td>
+      <td>${lcBadge}</td>
+      <td><span class="status ${ordStatusClass[o.status]||'s-received'}">${ordStatusLabel[o.status]||o.status}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="action-btn primary" onclick="printOC('${o.id}')">OC</button>
+        <button class="action-btn" onclick="editOrder('${o.id}')">수정</button>
+        <button class="action-btn del" onclick="deleteOrder('${o.id}')">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function generateOrderNumber() {
+  const now = new Date();
+  const prefix = `OC-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-`;
+  try {
+    const list = await api('GET',`orders?order_number=like.${prefix}*&order=order_number.desc&limit=1`);
+    let next = 1;
+    if (list && list[0]) next = parseInt(list[0].order_number.split('-').pop(),10) + 1;
+    return `${prefix}${String(next).padStart(3,'0')}`;
+  } catch(e) { return `${prefix}001`; }
+}
+
+async function openOrderModal(data=null) {
+  const csel = document.getElementById('ord-company');
+  csel.innerHTML = '<option value="">거래처 선택</option>' + companies.map(c=>`<option value="${c.id}">${c.company_name}${c.country?' ('+c.country+')':''}</option>`).join('');
+  const qsel = document.getElementById('ord-quotation');
+  qsel.innerHTML = '<option value="">견적 선택 (선택사항)</option>' + quotations.map(q=>{
+    const co = companies.find(c=>c.id===q.company_id);
+    return `<option value="${q.id}">${q.quotation_number}${co?' — '+co.company_name:''}</option>`;
+  }).join('');
+  document.getElementById('ord-id').value = data?data.id:'';
+  document.getElementById('ord-modal-title').textContent = data?'수주 수정':'수주 등록';
+  document.getElementById('ord-number').value = data?(data.order_number||''):(await generateOrderNumber());
+  document.getElementById('ord-po').value = data?(data.po_number||''):'';
+  document.getElementById('ord-company').value = data?(data.company_id||''):'';
+  document.getElementById('ord-quotation').value = data?(data.quotation_id||''):'';
+  document.getElementById('ord-date').value = data?(data.order_date||''):new Date().toISOString().split('T')[0];
+  document.getElementById('ord-delivery').value = data?(data.delivery_date||''):'';
+  document.getElementById('ord-currency').value = data?(data.currency||'USD'):'USD';
+  document.getElementById('ord-amount').value = data?(data.total_amount||''):'';
+  document.getElementById('ord-incoterms').value = data?(data.incoterms||''):'';
+  document.getElementById('ord-payment').value = data?(data.payment_terms||''):'';
+  document.getElementById('ord-lc-required').value = data?String(data.lc_required):'false';
+  document.getElementById('ord-lc-number').value = data?(data.lc_number||''):'';
+  document.getElementById('ord-lc-expiry').value = data?(data.lc_expiry_date||''):'';
+  document.getElementById('ord-lc-bank').value = data?(data.lc_issuing_bank||''):'';
+  document.getElementById('ord-status').value = data?(data.status||'received'):'received';
+  document.getElementById('ord-special').value = data?(data.special_requirements||''):'';
+  document.getElementById('ord-notes').value = data?(data.notes||''):'';
+  document.getElementById('order-modal').classList.add('open');
+}
+
+function fillOrderFromQuotation() {
+  const qtId = document.getElementById('ord-quotation').value;
+  if (!qtId) return;
+  const qt = quotations.find(q=>q.id===qtId);
+  if (!qt) return;
+  document.getElementById('ord-company').value = qt.company_id||'';
+  document.getElementById('ord-currency').value = qt.currency||'USD';
+  document.getElementById('ord-amount').value = qt.total_amount||'';
+  document.getElementById('ord-incoterms').value = qt.incoterms||'';
+  document.getElementById('ord-payment').value = qt.payment_terms||'';
+}
+
+async function editOrder(id) {
+  const data = await api('GET',`orders?id=eq.${id}`);
+  if (data&&data[0]) openOrderModal(data[0]);
+}
+
+async function deleteOrder(id) {
+  if (!confirm('이 수주 건을 삭제하시겠습니까?')) return;
+  await api('DELETE',`orders?id=eq.${id}`);
+  showToast('삭제되었습니다.','success');
+  await loadOrders();
+}
+
+async function saveOrder() {
+  const id = document.getElementById('ord-id').value;
+  const body = {
+    order_number: document.getElementById('ord-number').value,
+    quotation_id: document.getElementById('ord-quotation').value||null,
+    company_id: document.getElementById('ord-company').value||null,
+    po_number: document.getElementById('ord-po').value,
+    order_date: document.getElementById('ord-date').value||null,
+    delivery_date: document.getElementById('ord-delivery').value||null,
+    currency: document.getElementById('ord-currency').value,
+    total_amount: parseFloat(document.getElementById('ord-amount').value)||0,
+    incoterms: document.getElementById('ord-incoterms').value,
+    payment_terms: document.getElementById('ord-payment').value,
+    lc_required: document.getElementById('ord-lc-required').value === 'true',
+    lc_number: document.getElementById('ord-lc-number').value,
+    lc_expiry_date: document.getElementById('ord-lc-expiry').value||null,
+    lc_issuing_bank: document.getElementById('ord-lc-bank').value,
+    status: document.getElementById('ord-status').value,
+    special_requirements: document.getElementById('ord-special').value,
+    notes: document.getElementById('ord-notes').value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    if (id) { await api('PATCH',`orders?id=eq.${id}`,body); showToast('수정되었습니다.','success'); }
+    else { await api('POST','orders',body); showToast('등록되었습니다.','success'); }
+    closeModal('order-modal');
+    await loadOrders();
+  } catch(e) { showToast('저장 실패: '+e.message,'error'); }
+}
+
+async function printOC(orderId) {
+  const ord = orders.find(o=>o.id===orderId);
+  if (!ord) return;
+  const co = companies.find(c=>c.id===ord.company_id);
+  const qt = ord.quotation_id ? quotations.find(q=>q.id===ord.quotation_id) : null;
+  let items = [];
+  if (qt) { try { items = await api('GET',`quotation_items?quotation_id=eq.${qt.id}&order=sort_order`); } catch(e){} }
+  const sym = currencySymbol[ord.currency]||'';
+  const today = new Date().toISOString().split('T')[0];
+  const html = `<div class="qt-print">
+    <h1>ORDER CONFIRMATION</h1>
+    <div class="qt-num">${ord.order_number}${ord.po_number?' · Buyer PO# '+ord.po_number:''}</div>
+    <div class="qt-print-header">
+      <div class="qt-print-block">
+        <h3>Seller</h3>
+        <p class="name">Your Company Name</p>
+        <p>Address Line 1</p>
+        <p>City, Country</p>
+        <p>Tel: +82-XX-XXXX-XXXX</p>
+        <p>Email: info@company.com</p>
+      </div>
+      <div class="qt-print-block">
+        <h3>Buyer</h3>
+        <p class="name">${co?co.company_name:'-'}</p>
+        <p>${co?(co.city||'')+(co.country?', '+co.country:''):''}</p>
+        <p>${co?(co.contact_name?'Attn: '+co.contact_name:''):''}</p>
+        <p>${co?(co.contact_email||''):''}</p>
+      </div>
+      <div class="qt-print-block">
+        <h3>Order Details</h3>
+        <p><strong>OC No.:</strong> ${ord.order_number}</p>
+        <p><strong>Date:</strong> ${ord.order_date||today}</p>
+        <p><strong>Buyer PO#:</strong> ${ord.po_number||'-'}</p>
+        <p><strong>Delivery:</strong> ${ord.delivery_date||'-'}</p>
+        <p><strong>Incoterms:</strong> ${ord.incoterms||'-'}</p>
+        <p><strong>Payment:</strong> ${ord.payment_terms||'-'}</p>
+        ${ord.lc_required?`<p><strong>L/C No.:</strong> ${ord.lc_number||'TBD'}</p><p><strong>L/C Expiry:</strong> ${ord.lc_expiry_date||'-'}</p><p><strong>Issuing Bank:</strong> ${ord.lc_issuing_bank||'-'}</p>`:''}
+      </div>
+    </div>
+    <table>
+      <thead><tr><th style="width:5%">No.</th><th style="width:38%">Description</th><th style="width:12%">HS Code</th><th style="width:10%" class="num">Qty</th><th style="width:8%">Unit</th><th style="width:13%" class="num">Unit Price</th><th style="width:14%" class="num">Amount</th></tr></thead>
+      <tbody>
+        ${items.length ? items.map((it,i)=>`<tr>
+          <td>${i+1}</td><td><strong>${it.product_name}</strong></td>
+          <td>${it.hs_code||'-'}</td>
+          <td class="num">${Number(it.quantity).toLocaleString()}</td>
+          <td>${it.unit||'-'}</td>
+          <td class="num">${sym}${fmt(it.unit_price)}</td>
+          <td class="num">${sym}${fmt(it.amount)}</td>
+        </tr>`).join('') : `<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">품목 정보 없음 — 견적을 연결해주세요</td></tr>`}
+      </tbody>
+    </table>
+    <div class="totals-print">
+      <div class="grand">TOTAL: <strong style="display:inline-block;min-width:130px;text-align:right;">${sym}${fmt(ord.total_amount)} ${ord.currency||'USD'}</strong></div>
+    </div>
+    ${ord.special_requirements?`<div class="terms"><h3>Special Requirements / Notes</h3><p style="white-space:pre-line;font-size:12px;color:#555;">${ord.special_requirements}</p></div>`:''}
+    <div class="terms" style="text-align:right;margin-top:40px;">
+      <p style="margin-bottom:60px;">Authorized Signature &amp; Stamp:</p>
+      <p style="border-top:1px solid #333;display:inline-block;padding-top:6px;min-width:200px;text-align:center;">____________________</p>
+    </div>
+  </div>`;
+  document.getElementById('oc-content').innerHTML = html;
+  document.getElementById('oc-modal').classList.add('open');
+}
+
+function toggleOrderSqlBox() {
+  const el = document.getElementById('order-sql-box-wrap');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ====================== 선적 모듈 ======================
