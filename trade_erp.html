@@ -92,6 +92,27 @@ textarea.form-input { resize: vertical; min-height: 72px; }
 .section-divider { font-size: 11px; font-weight: 600; color: #888; grid-column: 1/-1; margin-top: 6px; padding-bottom: 4px; border-bottom: 1px solid #f0f0ef; text-transform: uppercase; letter-spacing: 0.05em; }
 .price-group { display: grid; grid-template-columns: 1fr 90px; gap: 6px; }
 
+/* Process Cockpit */
+.cockpit-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid #e5e5e3; }
+.ck-tab { padding:9px 16px; font-size:13px; border:none; background:none; cursor:pointer; color:#666; border-bottom:2px solid transparent; font-family:inherit; }
+.ck-tab:hover { color:#1a1a1a; }
+.ck-tab.active { color:#1a6db5; border-bottom-color:#1a6db5; font-weight:600; }
+.ck-empty { padding:32px; text-align:center; color:#aaa; font-size:13px; }
+.ck-empty code { background:#f5f5f4; padding:2px 6px; border-radius:4px; color:#c62828; font-family:monospace; }
+.ck-ribbon { display:flex; align-items:stretch; min-width:max-content; }
+.ck-stage { display:flex; flex-direction:column; gap:8px; min-width:128px; padding:0 6px; }
+.ck-stage.empty { opacity:.4; }
+.ck-stage-h { font-size:11px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:.05em; text-align:center; padding-bottom:4px; }
+.ck-stage-x { text-align:center; color:#ccc; padding:18px 0; }
+.ck-arrow { display:flex; align-items:center; color:#ccc; font-size:18px; padding:0 2px; align-self:center; margin-top:18px; }
+.ck-node { border:1px solid #e5e5e3; border-radius:9px; padding:10px; background:#fff; cursor:pointer; transition:all .15s; text-align:center; }
+.ck-node:hover { border-color:#1a6db5; box-shadow:0 2px 8px rgba(26,109,181,.12); }
+.ck-node.cur { border-color:#1a6db5; background:#EBF3FC; box-shadow:0 0 0 2px rgba(26,109,181,.15); }
+.ck-node-no { font-size:12px; font-weight:600; font-family:monospace; margin-bottom:6px; color:#1a1a1a; }
+.ck-actbar { margin-top:20px; padding-top:16px; border-top:1px dashed #e5e5e3; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ck-actlabel { font-size:12px; color:#666; margin-right:4px; }
+.ck-panel .section { margin-bottom:16px; }
+
 /* 견적 라인 아이템 */
 .items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
 .items-table th { background: #fafafa; padding: 8px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 600; border-bottom: 1px solid #e5e5e3; }
@@ -214,6 +235,11 @@ textarea.form-input { resize: vertical; min-height: 72px; }
       <div class="nav-item" id="nav-claim" onclick="showPage('claim',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         클레임 관리 <span class="badge" id="nav-claim-badge" style="background:#856404;">0</span>
+      </div>
+      <div class="nav-section">통제 · 흐름</div>
+      <div class="nav-item" id="nav-cockpit" onclick="showPage('cockpit',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+        Process Cockpit
       </div>
       <div class="nav-section">분석</div>
       <div class="nav-item" id="nav-dashboard" onclick="showPage('dashboard',this)">
@@ -834,6 +860,51 @@ CREATE TABLE order_items (
             </div>
             <div style="padding:4px 20px;" id="dash-payment-list"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Process Cockpit -->
+      <div id="page-cockpit" style="display:none;">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">현재 사용자 / 역할</div><div class="stat-value" style="font-size:16px;" id="ck-user">-</div><div class="stat-sub">RBAC 적용</div></div>
+          <div class="stat-card"><div class="stat-label">상태 전이 규칙</div><div class="stat-value" id="ck-stat-rules">0</div><div class="stat-sub">doc_status_transitions</div></div>
+          <div class="stat-card"><div class="stat-label">계정과목</div><div class="stat-value" id="ck-stat-accts">0</div><div class="stat-sub">gl_accounts</div></div>
+          <div class="stat-card"><div class="stat-label">문서흐름 링크</div><div class="stat-value" id="ck-stat-flow">0</div><div class="stat-sub">document_flow</div></div>
+        </div>
+        <div class="cockpit-tabs">
+          <button class="ck-tab active" onclick="cockpitTab('flow',this)">문서 흐름</button>
+          <button class="ck-tab" onclick="cockpitTab('gl',this)">회계 전표</button>
+          <button class="ck-tab" onclick="cockpitTab('approval',this)">승인</button>
+          <button class="ck-tab" onclick="cockpitTab('status',this)">상태 이력</button>
+          <button class="ck-tab" onclick="cockpitTab('audit',this)">감사 로그</button>
+        </div>
+        <div id="ck-flow" class="ck-panel">
+          <div class="section">
+            <div class="section-header">
+              <span class="section-title">문서 흐름 추적 (Document Flow)</span>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select id="ck-flow-type" class="form-input" style="width:auto;" onchange="ckFlowTypeChange()"></select>
+                <select id="ck-flow-doc" class="form-input" style="width:auto;min-width:160px;" onchange="ckRenderFlow()"></select>
+              </div>
+            </div>
+            <div style="padding:20px;overflow-x:auto;">
+              <div id="ck-flow-ribbon"></div>
+              <div id="ck-flow-actions"></div>
+            </div>
+          </div>
+        </div>
+        <div id="ck-gl" class="ck-panel" style="display:none;">
+          <div class="section"><div class="section-header"><span class="section-title">전기 대기 (To Post)</span><span style="font-size:11px;color:#888;">선적=매출인식 · 대금=입금</span></div><div class="table-wrap" id="ck-gl-todo"></div></div>
+          <div class="section"><div class="section-header"><span class="section-title">회계 전표 (Journal Entries)</span></div><div class="table-wrap" id="ck-gl-list"></div></div>
+        </div>
+        <div id="ck-approval" class="ck-panel" style="display:none;">
+          <div class="section"><div class="section-header"><span class="section-title">승인 대기 / 이력 (Approvals)</span></div><div class="table-wrap" id="ck-approval-list"></div></div>
+        </div>
+        <div id="ck-status" class="ck-panel" style="display:none;">
+          <div class="section"><div class="section-header"><span class="section-title">상태 변경 이력 (Status History)</span></div><div class="table-wrap" id="ck-status-list"></div></div>
+        </div>
+        <div id="ck-audit" class="ck-panel" style="display:none;">
+          <div class="section"><div class="section-header"><span class="section-title">감사 로그 (Audit Trail)</span></div><div class="table-wrap" id="ck-audit-list"></div></div>
         </div>
       </div>
     </div>
@@ -1940,6 +2011,403 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : [];
 }
 
+/* =====================================================================
+ *  Core 플랫폼 (SAP급 재설계 Foundation)
+ *  Repo·Bus·Num·Status·Flow·GL·Approval·Auth(RBAC)·Audit 횡단 엔진.
+ *  기존 모듈은 그대로 두고(strangler) 이 위에 점진적으로 올린다.
+ *  backbone 테이블(db/schema.sql)이 아직 없어도 앱이 깨지지 않도록 모두 graceful.
+ * ===================================================================== */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const DOC_NO_FIELD = { quotation:'quotation_number', order:'order_number', production:'production_number',
+  customs:'customs_number', shipment:'shipment_number', payment:'payment_number', claim:'claim_number' };
+
+const Core = (() => {
+  const state = {
+    user: { email:'junebee7@naver.com', name:'관리자', role_code:'admin' },
+    roleAuths: [], glAccounts: [], transitions: [], docFlow: [], backboneReady:false
+  };
+
+  const Repo = {
+    select:(table,q='') => api('GET', table + (q?('?'+q):'')),
+    insert:(table,body) => api('POST', table, body),
+    update:(table,q,body) => api('PATCH', table + '?' + q, body),
+    remove:(table,q) => api('DELETE', table + '?' + q),
+    async rpc(fn,args){
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`,{ method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json'},
+        body: JSON.stringify(args||{}) });
+      if(!res.ok) throw new Error(await res.text());
+      const t = await res.text(); return t?JSON.parse(t):null;
+    }
+  };
+
+  const Bus = (()=>{ const m={}; return {
+    on:(e,fn)=>{(m[e]=m[e]||[]).push(fn);},
+    emit:(e,p)=>{(m[e]||[]).forEach(fn=>{try{fn(p);}catch(err){console.warn(err);}});}
+  };})();
+
+  // 번호 채번 (DB rpc, 실패 시 클라이언트 폴백)
+  async function nextNo(object, fallbackPrefix){
+    try { return await Repo.rpc('next_number',{p_object:object}); }
+    catch(e){ const y=new Date().getFullYear(); return `${fallbackPrefix||'DOC'}-${y}-${String(Date.now()).slice(-4)}`; }
+  }
+
+  // 감사 로그
+  async function audit(action, objectType, objectId, opts={}){
+    try { await Repo.insert('audit_log', [{
+      user_email:state.user.email, action, object_type:objectType, object_id:objectId||null,
+      object_no:opts.no||null, before_data:opts.before||null, after_data:opts.after||null, note:opts.note||null
+    }]); } catch(e){ /* audit_log 미생성 시 무시 */ }
+  }
+
+  // RBAC
+  function can(object, action){
+    const role = state.user.role_code || 'viewer';
+    if (role==='admin') return true;
+    const rows = state.roleAuths.filter(r=>r.role_code===role && (r.object===object||r.object==='*'));
+    if (!rows.length) return action==='read';
+    return rows.some(r=>r['can_'+action]);
+  }
+
+  // 상태 전이 엔진
+  const Status = {
+    allowed:(docType,from)=> state.transitions.filter(t=>t.doc_type===docType && t.from_status===from),
+    can(docType,from,to){
+      if(!state.transitions.length) return true;            // 규칙 미로딩 → 허용
+      return state.transitions.some(t=>t.doc_type===docType&&t.from_status===from&&t.to_status===to);
+    },
+    async transition(docType, table, doc, to, opts={}){
+      const from = doc.status;
+      if(!Status.can(docType,from,to)) throw new Error(`허용되지 않은 상태 전이: ${from} → ${to}`);
+      const rule = state.transitions.find(t=>t.doc_type===docType&&t.from_status===from&&t.to_status===to);
+      if(rule && rule.requires_role && state.user.role_code!=='admin' && state.user.role_code!==rule.requires_role)
+        throw new Error(`권한 없음: '${rule.requires_role}' 역할이 필요합니다`);
+      await Repo.update(table, `id=eq.${doc.id}`, { status:to, updated_by:state.user.email });
+      const no = doc[DOC_NO_FIELD[docType]]||null;
+      try { await Repo.insert('document_status_history', [{ doc_type:docType, doc_id:doc.id, doc_no:no,
+        from_status:from, to_status:to, note:opts.note||null, changed_by:state.user.email }]); } catch(e){}
+      await audit('status', docType, doc.id, { no, before:{status:from}, after:{status:to}, note:opts.note });
+      doc.status = to;
+      Bus.emit('status:changed', {docType, id:doc.id, from, to});
+      return to;
+    }
+  };
+
+  // 문서 흐름 엔진
+  const Flow = {
+    async link(predType, pred, succType, succ, qty){
+      try { await Repo.insert('document_flow', [{
+        predecessor_type:predType, predecessor_id:pred.id, predecessor_no:pred[DOC_NO_FIELD[predType]]||null,
+        successor_type:succType, successor_id:succ.id, successor_no:succ[DOC_NO_FIELD[succType]]||null,
+        flow_qty:qty||null, created_by:state.user.email }]); } catch(e){ /* dup/미생성 무시 */ }
+    }
+  };
+
+  // 회계 전기 엔진 (차·대변 균형 검증)
+  const GL = {
+    account:(no)=> state.glAccounts.find(a=>a.account_no===no),
+    async post(entry){
+      const debit = entry.lines.reduce((s,l)=>s+(+l.debit||0),0);
+      const credit = entry.lines.reduce((s,l)=>s+(+l.credit||0),0);
+      if(Math.abs(debit-credit) > 0.01) throw new Error(`차·대변 불일치: Dr ${debit} ≠ Cr ${credit}`);
+      const doc_no = await nextNo('journal','JE');
+      const [hdr] = await Repo.insert('journal_entries', [{ doc_no, currency:entry.currency||'USD',
+        ref_type:entry.ref_type, ref_id:entry.ref_id, ref_no:entry.ref_no||null, partner_id:entry.partner_id||null,
+        description:entry.description||null, total_debit:debit, total_credit:credit, posted_by:state.user.email }]);
+      const lines = entry.lines.map((l,i)=>{ const a=GL.account(l.account_no); return {
+        entry_id:hdr.id, line_no:i+1, gl_account_id:a?a.id:null, gl_account_no:l.account_no,
+        debit:+l.debit||0, credit:+l.credit||0, partner_id:l.partner_id||entry.partner_id||null, description:l.description||null }; });
+      await Repo.insert('journal_entry_lines', lines);
+      await audit('post', entry.ref_type, entry.ref_id, { no:doc_no, after:{total_debit:debit} });
+      Bus.emit('gl:posted', {doc_no, ref_type:entry.ref_type, ref_id:entry.ref_id});
+      return hdr;
+    }
+  };
+
+  // 승인 워크플로우
+  const Approval = {
+    async request(docType, doc, {amount, currency, reason, approver_role='finance'}={}){
+      const no = await nextNo('approval','AP');
+      const [r] = await Repo.insert('approval_requests', [{ doc_type:docType, doc_id:doc.id,
+        doc_no:doc[DOC_NO_FIELD[docType]]||null, amount, currency, reason, approver_role, requested_by:state.user.email }]);
+      await audit('approval_request', docType, doc.id, { no, note:reason });
+      return r;
+    },
+    async decide(req, decision, note){
+      if(!can(req.doc_type,'approve') && state.user.role_code!=='admin') throw new Error('승인 권한이 없습니다');
+      await Repo.update('approval_requests', `id=eq.${req.id}`, { status:decision,
+        decided_by:state.user.email, decided_at:new Date().toISOString(), decision_note:note||null });
+      await audit(decision==='approved'?'approve':'reject', req.doc_type, req.doc_id, { no:req.doc_no, note });
+    }
+  };
+
+  async function boot(){
+    try { state.transitions = await Repo.select('doc_status_transitions') || []; } catch(e){}
+    try { state.glAccounts  = await Repo.select('gl_accounts','order=account_no') || []; } catch(e){}
+    try { state.roleAuths   = await Repo.select('role_authorizations') || []; } catch(e){}
+    try { state.docFlow     = await Repo.select('document_flow','order=created_at.desc&limit=2000') || []; } catch(e){}
+    try { const u = await Repo.select('app_users', `email=eq.${encodeURIComponent(state.user.email)}`);
+          if(u && u[0]) state.user = u[0]; } catch(e){}
+    state.backboneReady = (state.transitions.length>0 || state.glAccounts.length>0);
+    const el = document.getElementById('ck-user');
+    if(el) el.textContent = `${state.user.name||state.user.email} · ${state.user.role_code}`;
+  }
+
+  return { Repo, Bus, Status, Flow, GL, Approval, audit, can, nextNo, boot, state };
+})();
+
+/* ---------- 문서 흐름 메타데이터 (모듈 간 참조 그래프) ---------- */
+// 스테이지 순서 = 무역 프로세스 척추
+const FLOW_STAGES = [
+  {key:'quotation', label:'견적'}, {key:'order', label:'수주'}, {key:'production', label:'생산'},
+  {key:'customs', label:'통관'}, {key:'shipment', label:'선적'}, {key:'payment', label:'대금'}, {key:'claim', label:'클레임'}
+];
+// child.type 이 child[fk] 를 통해 parent 를 참조
+const FLOW_RELATIONS = [
+  {type:'order',      fk:'quotation_id', parent:'quotation'},
+  {type:'production', fk:'order_id',     parent:'order'},
+  {type:'shipment',   fk:'order_id',     parent:'order'},
+  {type:'customs',    fk:'shipment_id',  parent:'shipment'},
+  {type:'payment',    fk:'order_id',     parent:'order'},
+  {type:'payment',    fk:'shipment_id',  parent:'shipment'},
+  {type:'claim',      fk:'order_id',     parent:'order'},
+  {type:'claim',      fk:'shipment_id',  parent:'shipment'}
+];
+function flowArr(type){ return ({ quotation:quotations, order:orders, production:productionOrders,
+  customs:customsDecls, shipment:shipments, payment:payments, claim:claims })[type] || []; }
+function flowFind(type,id){ return flowArr(type).find(d=>d.id===id); }
+function flowMaps(type){
+  switch(type){
+    case 'quotation': return { label:{draft:'작성',sent:'발송',won:'수주전환',lost:'실주',negotiating:'협상',quoted:'견적완료',expired:'만료',reviewing:'검토'},
+                               cls:{draft:'s-draft',sent:'s-sent',won:'s-won',lost:'s-lost',negotiating:'s-negotiating',quoted:'s-quoted',expired:'s-expired',reviewing:'s-reviewing'} };
+    case 'order':      return { label:ordStatusLabel, cls:ordStatusClass };
+    case 'production': return { label:prStatusLabel, cls:prStatusClass };
+    case 'customs':    return { label:cuStatusLabel, cls:cuStatusClass };
+    case 'shipment':   return { label:shStatusLabel, cls:shStatusClass };
+    case 'payment':    return { label:pmStatusLabel, cls:pmStatusClass };
+    case 'claim':      return { label:clStatusLabel, cls:clStatusClass };
+    default:           return { label:{}, cls:{} };
+  }
+}
+function ckStatusBadge(type, status){
+  const m = flowMaps(type); const lbl = (m.label&&m.label[status])||status||'-';
+  const cls = (m.cls&&m.cls[status])||'s-received';
+  return `<span class="status ${cls}">${esc(lbl)}</span>`;
+}
+// 선택 문서가 속한 연결요소(BFS) 를 스테이지별로 버킷팅
+function flowComponent(type, id){
+  const seen = new Set(), queue = [{type,id}], nodes = [];
+  const links = Core.state.docFlow||[];
+  while(queue.length){
+    const cur = queue.shift(); const key = cur.type+':'+cur.id;
+    if(seen.has(key)) continue; seen.add(key);
+    const doc = flowFind(cur.type, cur.id); if(!doc) continue;
+    nodes.push({type:cur.type, doc});
+    // 부모 방향
+    FLOW_RELATIONS.filter(r=>r.type===cur.type).forEach(r=>{ if(doc[r.fk]) queue.push({type:r.parent, id:doc[r.fk]}); });
+    // 자식 방향
+    FLOW_RELATIONS.filter(r=>r.parent===cur.type).forEach(r=>{
+      flowArr(r.type).forEach(c=>{ if(c[r.fk]===cur.id) queue.push({type:r.type, id:c.id}); });
+    });
+    // 명시적 document_flow 링크 양방향
+    links.forEach(l=>{
+      if(l.predecessor_type===cur.type && l.predecessor_id===cur.id) queue.push({type:l.successor_type, id:l.successor_id});
+      if(l.successor_type===cur.type && l.successor_id===cur.id) queue.push({type:l.predecessor_type, id:l.predecessor_id});
+    });
+  }
+  const buckets = {}; FLOW_STAGES.forEach(s=>buckets[s.key]=[]);
+  nodes.forEach(n=>{ if(buckets[n.type]) buckets[n.type].push(n.doc); });
+  return buckets;
+}
+
+/* =====================================================================
+ *  Process Cockpit — 문서흐름 · 회계전표 · 승인 · 상태이력 · 감사로그
+ * ===================================================================== */
+let ckJournal=[], ckApprovals=[], ckStatusHist=[], ckAudit=[], ckCurrent={type:null,id:null};
+
+function renderCockpit(){
+  const setT=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+  setT('ck-stat-rules', Core.state.transitions.length);
+  setT('ck-stat-accts', Core.state.glAccounts.length);
+  setT('ck-stat-flow', (Core.state.docFlow||[]).length);
+  setT('ck-user', `${Core.state.user.name||Core.state.user.email} · ${Core.state.user.role_code}`);
+  ckPopulateTypes();
+  ckRenderFlow();
+}
+function cockpitTab(name, el){
+  document.querySelectorAll('.ck-tab').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  ['flow','gl','approval','status','audit'].forEach(p=>{ const x=document.getElementById('ck-'+p); if(x) x.style.display = p===name?'':'none'; });
+  if(name==='gl') ckLoadGL();
+  if(name==='approval') ckLoadApprovals();
+  if(name==='status') ckLoadStatusHist();
+  if(name==='audit') ckLoadAudit();
+}
+function ckPopulateTypes(){
+  const sel = document.getElementById('ck-flow-type');
+  const opts = FLOW_STAGES.filter(s=>flowArr(s.key).length).map(s=>`<option value="${s.key}">${s.label} (${flowArr(s.key).length})</option>`).join('');
+  sel.innerHTML = opts || '<option value="">데이터 없음</option>';
+  ckFlowTypeChange();
+}
+function ckFlowTypeChange(){
+  const type = document.getElementById('ck-flow-type').value;
+  const sel = document.getElementById('ck-flow-doc');
+  const arr = flowArr(type);
+  sel.innerHTML = arr.map(d=>`<option value="${d.id}">${esc(d[DOC_NO_FIELD[type]]||d.id.slice(0,8))}</option>`).join('');
+  if(arr.length){ ckCurrent={type, id:arr[0].id}; }
+  ckRenderFlow();
+}
+function ckRenderFlow(){
+  const type = document.getElementById('ck-flow-type').value;
+  const id = document.getElementById('ck-flow-doc').value;
+  if(!type || !id){ document.getElementById('ck-flow-ribbon').innerHTML='<div class="ck-empty">추적할 문서를 선택하세요.</div>'; document.getElementById('ck-flow-actions').innerHTML=''; return; }
+  ckCurrent = {type, id};
+  const buckets = flowComponent(type, id);
+  const ribbon = FLOW_STAGES.map((s,i)=>{
+    const docs = buckets[s.key];
+    const arrow = i>0 ? `<div class="ck-arrow">→</div>` : '';
+    if(!docs.length) return `${arrow}<div class="ck-stage empty"><div class="ck-stage-h">${s.label}</div><div class="ck-stage-x">–</div></div>`;
+    const cards = docs.map(d=>{
+      const isCur = (s.key===type && d.id===id);
+      const no = esc(d[DOC_NO_FIELD[s.key]]||d.id.slice(0,8));
+      return `<div class="ck-node${isCur?' cur':''}" onclick="ckSelect('${s.key}','${d.id}')">
+        <div class="ck-node-no">${no}</div>${ckStatusBadge(s.key, d.status)}</div>`;
+    }).join('');
+    return `${arrow}<div class="ck-stage"><div class="ck-stage-h">${s.label}</div>${cards}</div>`;
+  }).join('');
+  document.getElementById('ck-flow-ribbon').innerHTML = `<div class="ck-ribbon">${ribbon}</div>`;
+  ckRenderActions(type, id);
+}
+function ckSelect(type, id){
+  document.getElementById('ck-flow-type').value = type;
+  ckFlowTypeChangeKeep(id);
+}
+function ckFlowTypeChangeKeep(id){
+  const type = document.getElementById('ck-flow-type').value;
+  const sel = document.getElementById('ck-flow-doc');
+  sel.innerHTML = flowArr(type).map(d=>`<option value="${d.id}"${d.id===id?' selected':''}>${esc(d[DOC_NO_FIELD[type]]||d.id.slice(0,8))}</option>`).join('');
+  ckRenderFlow();
+}
+function ckRenderActions(type, id){
+  const doc = flowFind(type, id); const box = document.getElementById('ck-flow-actions');
+  if(!doc){ box.innerHTML=''; return; }
+  const trans = Core.Status.allowed(type, doc.status);
+  const tableMap = { order:'orders', quotation:'quotations', production:'production_orders', customs:'customs_declarations', shipment:'shipments', payment:'payments', claim:'claims' };
+  let html = `<div class="ck-actbar"><div class="ck-actlabel">현재 상태 ${ckStatusBadge(type, doc.status)} · 다음 단계</div>`;
+  if(trans.length && tableMap[type]){
+    html += trans.map(t=>`<button class="btn btn-sm btn-primary" onclick="ckTransition('${type}','${tableMap[type]}','${id}','${t.to_status}')">${esc(t.label||t.to_status)}${t.requires_role?` <span style="opacity:.7">(${esc(t.requires_role)})</span>`:''}</button>`).join('');
+  } else { html += `<span style="color:#aaa;font-size:12px;">정의된 다음 단계 없음</span>`; }
+  // 전표 발행 (선적=매출, 대금=입금) — 계정과목(gl_accounts) 로드 후에만
+  const glReady = Core.state.glAccounts.length > 0;
+  if(glReady && type==='shipment' && !doc.gl_posted) html += `<button class="btn btn-sm" onclick="ckPostShipment('${id}')">📒 매출 전표 발행</button>`;
+  if(glReady && type==='payment' && !doc.gl_posted) html += `<button class="btn btn-sm" onclick="ckPostPayment('${id}')">📒 입금 전표 발행</button>`;
+  if(glReady && doc.gl_posted) html += `<span class="tag" style="background:#e6f4ea;color:#1e7e34;">전표 발행됨</span>`;
+  html += `</div>`;
+  box.innerHTML = html;
+}
+async function ckTransition(type, table, id, to){
+  const doc = flowFind(type, id); if(!doc) return;
+  try {
+    await Core.Status.transition(type, table, doc, to);
+    showToast(`상태 변경: ${to}`, 'success');
+    ckRenderFlow();
+  } catch(e){ showToast(e.message||'상태 변경 실패','error'); }
+}
+
+// 선적 → 매출 인식 전표 (Dr 외상매출금 / Cr 수출매출)
+async function ckPostShipment(id){
+  const sh = flowFind('shipment', id); if(!sh) return;
+  // 금액은 연결된 수주에서 가져온다
+  const ord = sh.order_id ? flowFind('order', sh.order_id) : (flowComponent('shipment',id).order[0]||null);
+  if(!ord){ showToast('연결된 수주가 없어 금액을 알 수 없습니다','error'); return; }
+  const amt = Number(ord.total_amount||0), cur = ord.currency||'USD';
+  if(amt<=0){ showToast('수주 금액이 0 입니다','error'); return; }
+  try {
+    const je = await Core.GL.post({ ref_type:'shipment', ref_id:id, ref_no:sh.shipment_number, partner_id:ord.company_id, currency:cur,
+      description:`매출인식 ${sh.shipment_number||''} (수주 ${ord.order_number||''})`,
+      lines:[ {account_no:'1200', debit:amt, description:'외상매출금'},
+              {account_no:'4100', credit:amt, description:'수출매출'} ] });
+    await Core.Repo.update('shipments', `id=eq.${id}`, { gl_posted:true });
+    sh.gl_posted = true;
+    showToast(`매출 전표 ${je.doc_no} 발행`, 'success');
+    ckRenderActions('shipment', id);
+  } catch(e){ showToast(e.message||'전표 발행 실패','error'); }
+}
+// 대금 회수 → 입금 전표 (Dr 현금 / Cr 외상매출금)
+async function ckPostPayment(id){
+  const pm = flowFind('payment', id); if(!pm) return;
+  const amt = Number(pm.received_amount||pm.invoice_amount||0), cur = pm.received_currency||pm.invoice_currency||'USD';
+  if(amt<=0){ showToast('입금액이 0 입니다','error'); return; }
+  try {
+    const je = await Core.GL.post({ ref_type:'payment', ref_id:id, ref_no:pm.payment_number, partner_id:pm.company_id, currency:cur,
+      description:`입금 ${pm.payment_number||''}`,
+      lines:[ {account_no:'1100', debit:amt, description:'현금및예금'},
+              {account_no:'1200', credit:amt, description:'외상매출금 회수'} ] });
+    await Core.Repo.update('payments', `id=eq.${id}`, { gl_posted:true });
+    pm.gl_posted = true;
+    showToast(`입금 전표 ${je.doc_no} 발행`, 'success');
+    ckRenderActions('payment', id);
+  } catch(e){ showToast(e.message||'전표 발행 실패','error'); }
+}
+
+async function ckLoadGL(){
+  const box = document.getElementById('ck-gl-list');
+  try { ckJournal = await Core.Repo.select('journal_entries','order=posted_at.desc&limit=100') || []; }
+  catch(e){ box.innerHTML = `<div class="ck-empty">journal_entries 테이블이 없습니다. <code>db/schema.sql</code> 실행 필요.</div>`; document.getElementById('ck-gl-todo').innerHTML=''; return; }
+  box.innerHTML = ckJournal.length ? `<table><thead><tr><th>전표번호</th><th>일자</th><th>참조</th><th>적요</th><th class="num">차변</th><th class="num">대변</th></tr></thead><tbody>${
+    ckJournal.map(j=>`<tr><td><span class="tag">${esc(j.doc_no)}</span></td><td>${esc((j.posting_date||'').slice(0,10))}</td><td>${esc(j.ref_type||'')} ${esc(j.ref_no||'')}</td><td>${esc(j.description||'')}</td><td class="num">${fmt(j.total_debit)}</td><td class="num">${fmt(j.total_credit)}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="ck-empty">발행된 전표가 없습니다.</div>';
+  // 미전기 문서 (전표 발행 대상)
+  const unpostedSh = shipments.filter(s=>!s.gl_posted && ['loaded','departed','arrived'].includes(s.status));
+  const unpostedPm = payments.filter(p=>!p.gl_posted && (p.status==='completed'||p.status==='partial'));
+  const rows = [
+    ...unpostedSh.map(s=>`<tr><td>선적</td><td><span class="tag">${esc(s.shipment_number||'')}</span></td><td>${ckStatusBadge('shipment',s.status)}</td><td><button class="btn btn-sm" onclick="ckPostShipment('${s.id}')">매출 전표 발행</button></td></tr>`),
+    ...unpostedPm.map(p=>`<tr><td>대금</td><td><span class="tag">${esc(p.payment_number||'')}</span></td><td>${ckStatusBadge('payment',p.status)}</td><td><button class="btn btn-sm" onclick="ckPostPayment('${p.id}')">입금 전표 발행</button></td></tr>`)
+  ];
+  document.getElementById('ck-gl-todo').innerHTML = rows.length ? `<table><thead><tr><th>유형</th><th>문서</th><th>상태</th><th>액션</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<div class="ck-empty">전기 대기 문서가 없습니다.</div>';
+}
+
+async function ckLoadApprovals(){
+  const box = document.getElementById('ck-approval-list');
+  try { ckApprovals = await Core.Repo.select('approval_requests','order=requested_at.desc&limit=100') || []; }
+  catch(e){ box.innerHTML = `<div class="ck-empty">approval_requests 테이블이 없습니다. <code>db/schema.sql</code> 실행 필요.</div>`; return; }
+  if(!ckApprovals.length){ box.innerHTML = '<div class="ck-empty">승인 요청이 없습니다.</div>'; return; }
+  const canApprove = Core.can('order','approve') || Core.state.user.role_code==='admin' || Core.state.user.role_code==='finance';
+  box.innerHTML = `<table><thead><tr><th>승인번호</th><th>문서</th><th>금액</th><th>사유</th><th>상태</th><th>요청자</th><th>액션</th></tr></thead><tbody>${
+    ckApprovals.map(a=>{
+      const actions = (a.status==='pending' && canApprove)
+        ? `<button class="action-btn primary" onclick="ckApprove('${a.id}','approved')">승인</button><button class="action-btn del" onclick="ckApprove('${a.id}','rejected')">반려</button>`
+        : esc(a.decided_by||'-');
+      const st = {pending:'s-negotiating',approved:'s-won',rejected:'s-lost',cancelled:'s-received'}[a.status]||'s-received';
+      return `<tr><td><span class="tag">${esc(a.doc_no||'')}</span></td><td>${esc(a.doc_type)} ${esc(a.doc_no||'')}</td><td class="num">${a.amount?fmt(a.amount):'-'} ${esc(a.currency||'')}</td><td>${esc(a.reason||'')}</td><td><span class="status ${st}">${esc(a.status)}</span></td><td>${esc(a.requested_by||'')}</td><td>${actions}</td></tr>`;
+    }).join('')
+  }</tbody></table>`;
+}
+async function ckApprove(id, decision){
+  const req = ckApprovals.find(a=>a.id===id); if(!req) return;
+  try { await Core.Approval.decide(req, decision); showToast(decision==='approved'?'승인 완료':'반려 완료','success'); ckLoadApprovals(); }
+  catch(e){ showToast(e.message||'처리 실패','error'); }
+}
+
+async function ckLoadStatusHist(){
+  const box = document.getElementById('ck-status-list');
+  try { ckStatusHist = await Core.Repo.select('document_status_history','order=changed_at.desc&limit=100') || []; }
+  catch(e){ box.innerHTML = `<div class="ck-empty">document_status_history 테이블이 없습니다. <code>db/schema.sql</code> 실행 필요.</div>`; return; }
+  box.innerHTML = ckStatusHist.length ? `<table><thead><tr><th>일시</th><th>문서</th><th>변경</th><th>담당</th><th>비고</th></tr></thead><tbody>${
+    ckStatusHist.map(h=>`<tr><td>${esc((h.changed_at||'').replace('T',' ').slice(0,16))}</td><td>${esc(h.doc_type)} <span class="tag">${esc(h.doc_no||'')}</span></td><td>${esc(h.from_status||'-')} → <strong>${esc(h.to_status)}</strong></td><td>${esc(h.changed_by||'')}</td><td>${esc(h.note||'')}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="ck-empty">상태 변경 이력이 없습니다.</div>';
+}
+
+async function ckLoadAudit(){
+  const box = document.getElementById('ck-audit-list');
+  try { ckAudit = await Core.Repo.select('audit_log','order=ts.desc&limit=150') || []; }
+  catch(e){ box.innerHTML = `<div class="ck-empty">audit_log 테이블이 없습니다. <code>db/schema.sql</code> 실행 필요.</div>`; return; }
+  box.innerHTML = ckAudit.length ? `<table><thead><tr><th>일시</th><th>사용자</th><th>액션</th><th>대상</th><th>비고</th></tr></thead><tbody>${
+    ckAudit.map(a=>`<tr><td>${esc((a.ts||'').replace('T',' ').slice(0,16))}</td><td>${esc(a.user_email||'')}</td><td><span class="tag">${esc(a.action)}</span></td><td>${esc(a.object_type||'')} ${esc(a.object_no||'')}</td><td>${esc(a.note||'')}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="ck-empty">감사 로그가 없습니다.</div>';
+}
+
 let companies = [], products = [], quotations = [], shipments = [], orders = [], productionOrders = [], customsDecls = [], payments = [], claims = [], currentPage = 'inquiry';
 let ordLineItems = [];
 let qtLineItems = [];
@@ -1954,10 +2422,10 @@ function fmt(n) { return Number(n||0).toLocaleString(undefined,{minimumFractionD
 
 function showPage(page, el) {
   currentPage = page;
-  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment','claim','dashboard'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
+  ['inquiry','company','product','quotation','order','production','customs','shipment','document','payment','claim','dashboard','cockpit'].forEach(p => document.getElementById('page-'+p).style.display = p===page ? '' : 'none');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (el) el.classList.add('active');
-  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수',claim:'클레임 관리',dashboard:'대시보드'};
+  const titles = {inquiry:'문의 접수',company:'거래처 관리',product:'품목 관리',quotation:'견적 관리',order:'수주 등록',production:'생산/발주 관리',customs:'수출 통관',shipment:'선적 관리',document:'서류 생성',payment:'대금 회수',claim:'클레임 관리',dashboard:'대시보드',cockpit:'Process Cockpit'};
   document.getElementById('page-title').textContent = titles[page]||'';
   const actions = {
     inquiry: `<button class="btn" onclick="openCompanyModal()">+ 거래처</button><button class="btn" onclick="openProductModal()">+ 품목</button><button class="btn btn-primary" onclick="openInquiryModal()">+ 문의 등록</button>`,
@@ -1971,7 +2439,8 @@ function showPage(page, el) {
     claim: `<button class="btn btn-primary" onclick="openClaimModal()">+ 클레임 등록</button>`,
     shipment: `<button class="btn btn-primary" onclick="openShipmentModal()">+ 선적 등록</button>`,
     document: ``,
-    dashboard: ``
+    dashboard: ``,
+    cockpit: `<button class="btn" onclick="Core.boot().then(renderCockpit)">↻ 새로고침</button>`
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   if (page==='company') renderCompanies();
@@ -1985,6 +2454,7 @@ function showPage(page, el) {
   if (page==='shipment') loadShipments();
   if (page==='document') renderDocumentList();
   if (page==='dashboard') loadDashboard();
+  if (page==='cockpit') renderCockpit();
 }
 
 async function init() {
@@ -2004,6 +2474,7 @@ async function init() {
     try { customsDecls = await api('GET','customs_declarations?order=created_at.desc'); updateCustomsStats(customsDecls); } catch(e) { /* customs_declarations 테이블 미생성 시 무시 */ }
     try { payments = await api('GET','payments?order=created_at.desc'); updatePaymentStats(payments); } catch(e) { /* payments 테이블 미생성 시 무시 */ }
     try { claims = await api('GET','claims?order=created_at.desc'); updateClaimStats(claims); } catch(e) { /* claims 테이블 미생성 시 무시 */ }
+    try { await Core.boot(); } catch(e) { /* backbone 미생성 시 무시 */ }
   } catch(e) {
     document.getElementById('conn-status').textContent = '연결 실패';
     document.getElementById('conn-status').className = 'conn-badge conn-fail';
