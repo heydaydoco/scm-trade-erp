@@ -70,11 +70,16 @@ export const QUOTATION_STATUS: Code[] = [
   { code: "expired", label: "만료" },
 ];
 
-/** 거래처 구분(도메인). DB company_type(buyer/supplier) ↔ 매핑은 services/partners.ts */
+/** 거래처 구분(도메인) 단일 출처 — 선택 가능한 3종. DB company_type ↔ 매핑은 services/partners.ts */
+export const PARTNER_TYPES: Code[] = [
+  { code: "customer", label: "고객" },
+  { code: "supplier", label: "공급사" },
+  { code: "both", label: "고객·공급사" },
+];
+
+/** 구분 코드 → 라벨 (PARTNER_TYPES에서 파생 + 미분류). 화면·폼·액션이 공유. */
 export const PARTNER_TYPE_LABEL: Record<string, string> = {
-  customer: "고객",
-  supplier: "공급사",
-  both: "고객·공급사",
+  ...Object.fromEntries(PARTNER_TYPES.map((c) => [c.code, c.label])),
   unknown: "미분류",
 };
 

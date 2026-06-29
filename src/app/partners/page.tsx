@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { listPartners } from "@/services/partners";
 import type { Partner } from "@/services/types";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge, type BadgeVariant } from "@/components/Badge";
 import { PARTNER_TYPE_LABEL } from "@/services/codes";
 
-// 항상 요청 시점에 최신 데이터를 읽는다 (빌드 타임 정적 캐시 X).
+// 항상 요청 시점에 최신 데이터를 읽는다.
 export const dynamic = "force-dynamic";
 
 const TYPE_VARIANT: Record<string, BadgeVariant> = {
@@ -30,6 +31,7 @@ export default async function PartnersPage() {
         title="거래처"
         subtitle="Partners"
         count={errorMessage ? undefined : partners.length}
+        action={{ href: "/partners/new", label: "+ 거래처 등록" }}
       />
 
       {errorMessage ? (
@@ -39,7 +41,7 @@ export default async function PartnersPage() {
         </div>
       ) : partners.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center text-zinc-500">
-          등록된 거래처가 없습니다.
+          등록된 거래처가 없습니다. 우측 상단 &ldquo;+ 거래처 등록&rdquo;으로 추가하세요.
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
@@ -51,12 +53,23 @@ export default async function PartnersPage() {
                 <th className="px-4 py-3 font-medium">국가 · 도시</th>
                 <th className="px-4 py-3 font-medium">통화</th>
                 <th className="px-4 py-3 font-medium">담당자</th>
+                <th className="px-4 py-3 font-medium">상태</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {partners.map((p) => (
-                <tr key={p.id} className="hover:bg-zinc-50">
-                  <td className="px-4 py-3 font-medium text-zinc-900">{p.name}</td>
+                <tr
+                  key={p.id}
+                  className={`hover:bg-zinc-50 ${p.active ? "" : "opacity-50"}`}
+                >
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/partners/${p.id}`}
+                      className="font-medium text-zinc-900 hover:text-blue-700 hover:underline"
+                    >
+                      {p.name || "(이름 없음)"}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <Badge variant={TYPE_VARIANT[p.type] ?? "zinc"}>
                       {PARTNER_TYPE_LABEL[p.type] ?? p.type}
@@ -77,6 +90,13 @@ export default async function PartnersPage() {
                       </span>
                     ) : null}
                   </td>
+                  <td className="px-4 py-3">
+                    {p.active ? (
+                      <Badge variant="green">활성</Badge>
+                    ) : (
+                      <Badge variant="zinc">비활성</Badge>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -85,7 +105,7 @@ export default async function PartnersPage() {
       )}
 
       <p className="mt-6 text-xs text-zinc-400">
-        P1 진행 중 · 데이터 출처: Supabase
+        P1 진행 중 · 거래처명을 클릭하면 수정 · 데이터 출처: Supabase
       </p>
     </div>
   );
