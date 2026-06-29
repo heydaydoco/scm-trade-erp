@@ -377,6 +377,9 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 **가장 얇은 끝-끝 한 줄을 먼저.** 연결 문제(인증·배포·권한)는 항상 예상보다 어렵고 마지막에 발견하면 재앙.
 
 - **P0 — 골격**: Next.js + Supabase + Vercel 배포 파이프라인. "거래처 목록 1화면"이 실제 URL에서 뜨는 것까지. (이미 있는 1단계 HTML 자산을 React로 이식)
+  - ✅ **완료 (2026-06-29)** — https://scm-trade-erp.vercel.app/partners 라이브. 스택: Next.js 16 + React 19 + TypeScript + Tailwind v4 + Supabase + Vercel(GitHub 자동배포).
+  - 구조: 화면(`app/partners`) → 서비스(`services/partners.listPartners`) → I/O(`lib/supabase/server`) → Supabase 3겹으로 **원칙 7** 적용. 화면은 물리 테이블을 모름.
+  - 데이터: 기존 `companies` 테이블 **유지**(읽기 전용), 서비스 레이어에서 도메인 `Partner`로 매핑(buyer→customer, supplier→supplier). 실제 `partners` 테이블 이전은 **P1/P2**로 미룸.
 - **P1 — 마스터 + 영업 초입**: 품목·거래처·코드테이블 / 문의·견적 (기존 기능 이식 + 정리)
 - **P2 — 수주 + 환율 + 감사로그**: SO(참조생성), 주문확인서, 환율 대장, audit_log 기반 깔기
 - **P3 — 구매 + 선적부킹 + 기일엔진**: PO, 선적부킹/마일스톤, 기일 역산 알림
@@ -405,4 +408,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v1.0 · 다음 갱신은 P0 착수 시*
+*문서 버전: v1.1 · P0 완료(2026-06-29) · 다음 갱신은 P1 착수 시*
