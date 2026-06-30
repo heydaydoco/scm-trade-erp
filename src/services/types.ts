@@ -132,3 +132,84 @@ export interface InquiryInput {
   status: string;
   notes: string | null;
 }
+
+/**
+ * 도메인 타입 — 견적(Quotation) (SPEC B2, 원칙 2 헤더-라인의 첫 등장).
+ *
+ * 물리 테이블 quotations(헤더) + quotation_items(라인) 이식.
+ *  - 원칙 2: 라인이 합계의 진실. subtotal=Σ(line.amount), total=subtotal−discount
+ *    는 서비스가 항상 재계산한다(헤더 컬럼은 표시·인쇄용 스냅샷).
+ *  - 원칙 3: inquiryId = 참조 생성 출처(문의→견적).
+ *  - 원칙 6: quotationNumber는 DB 원자적 발번(next_doc_number)으로만 채번.
+ *  - 원칙 1-B: 견적당 단일 통화 + exchangeRate(확정시점 고정, 전체 FX는 P2).
+ */
+export interface QuotationLine {
+  id: string;
+  lineNo: number; // sort_order + 1 (표시용 1-based)
+  productId: string | null; // 품목 소프트 링크
+  productName: string; // 자유텍스트 스냅샷
+  hsCode: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unitPrice: number;
+  amount: number; // = quantity × unitPrice (파생 — 서비스가 계산)
+}
+
+export interface Quotation {
+  id: string;
+  quotationNumber: string;
+  inquiryId: string | null;
+  partnerId: string | null;
+  partnerName: string | null; // 조인 표시용
+  partnerCountry: string | null;
+  quotationDate: string | null;
+  validUntil: string | null;
+  currency: string | null;
+  exchangeRate: number | null;
+  incoterms: string | null;
+  paymentTerms: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  transport: string | null;
+  discount: number; // 헤더 레벨 할인
+  subtotal: number; // = Σ(line.amount) (파생)
+  total: number; // = subtotal − discount (파생)
+  status: string; // draft/sent/approved/rejected/expired
+  notes: string | null;
+  termsConditions: string | null;
+  lines: QuotationLine[];
+}
+
+/** 견적 라인 입력 (id·amount 제외 — amount는 서비스가 계산). */
+export interface QuotationLineInput {
+  productId: string | null;
+  productName: string;
+  hsCode: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unitPrice: number;
+}
+
+/** 견적 등록/수정 입력 (번호·합계·조인필드 제외 — 서비스가 채움). */
+export interface QuotationInput {
+  inquiryId: string | null;
+  partnerId: string | null;
+  quotationDate: string | null;
+  validUntil: string | null;
+  currency: string | null;
+  exchangeRate: number | null;
+  incoterms: string | null;
+  paymentTerms: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  transport: string | null;
+  discount: number;
+  status: string;
+  notes: string | null;
+  termsConditions: string | null;
+  lines: QuotationLineInput[];
+}
