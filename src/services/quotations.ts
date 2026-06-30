@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { DEFAULT_QUOTATION_TERMS, round2 } from "./codes";
 import type {
@@ -142,13 +141,12 @@ function assembleQuotation(
   };
 }
 
-/** 도메인 입력 → quotations 헤더 컬럼. quotationNumber는 등록 시에만 포함(수정 시 불변). */
-function buildHeader(
+/** 도메인 입력 → save_quotation RPC용 헤더 jsonb (번호·updated_at은 RPC가 채움). */
+function headerPayload(
   input: QuotationInput,
   totals: { subtotal: number; total: number },
-  quotationNumber?: string,
 ): Record<string, unknown> {
-  const header: Record<string, unknown> = {
+  return {
     inquiry_id: input.inquiryId,
     company_id: input.partnerId,
     quotation_date: input.quotationDate,
@@ -167,18 +165,14 @@ function buildHeader(
     status: input.status,
     notes: input.notes,
     terms_conditions: input.termsConditions,
-    updated_at: new Date().toISOString(),
   };
-  if (quotationNumber) header.quotation_number = quotationNumber;
-  return header;
 }
 
-function buildLineRows(
-  quotationId: string,
+/** 도메인 라인 → save_quotation RPC용 라인 jsonb 배열 (amount는 서버 계산값). */
+function linePayload(
   lines: QuotationLineInput[],
 ): Record<string, unknown>[] {
   return lines.map((l, i) => ({
-    quotation_id: quotationId,
     product_id: l.productId,
     product_name: l.productName,
     hs_code: l.hsCode,
@@ -230,36 +224,27 @@ export function buildQuotationDraftFromInquiry(inq: Inquiry): QuotationInput {
 /* ---------- I/O (서비스). 화면은 이 함수들만 호출한다. ---------- */
 
 /**
- * 견적번호 원자적 발번 (원칙 6) — P1.1에서 만든 3-arg DB 함수를 호출한다.
- * doc_type는 'quotation'(='QT' 아님, 기존 카운터 행과 일치). 완성 문자열을 받는다.
- * 참조: db/migrations/p1.1_doc_numbering.sql
+ * 견적 저장 — 번호발번 + 헤더 + 라인을 단일 트랜잭션 함수(save_quotation)로 원자 처리.
+ * 중간 실패 시 전부 롤백(데이터 손실·유령전표·번호 결번 없음).
+ * 참조: db/migrations/p1.5_save_quotation.sql, p1.1_doc_numbering.sql
+ * p_id=null이면 등록(함수가 next_doc_number로 'quotation' 채번), 있으면 수정(번호 불변).
  */
-async function generateQuotationNumber(
-  supabase: SupabaseClient,
-  period: string,
+async function saveViaRpc(
+  id: string | null,
+  input: QuotationInput,
+  totals: { subtotal: number; total: number },
 ): Promise<string> {
-  const { data, error } = await supabase.rpc("next_doc_number", {
-    p_doc_type: "quotation",
-    p_prefix: "QT",
-    p_period: period,
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("save_quotation", {
+    p_id: id,
+    p_header: headerPayload(input, totals),
+    p_lines: linePayload(input.lines),
+    p_period: id ? null : periodOf(input.quotationDate),
   });
-  if (error) throw new Error(`견적번호 발번 실패: ${error.message}`);
-  if (typeof data !== "string") {
-    throw new Error("견적번호 발번 결과가 올바르지 않습니다.");
-  }
-  return data;
-}
-
-async function insertLines(
-  supabase: SupabaseClient,
-  quotationId: string,
-  lines: QuotationLineInput[],
-): Promise<void> {
-  if (!lines.length) return;
-  const { error } = await supabase
-    .from("quotation_items")
-    .insert(buildLineRows(quotationId, lines));
-  if (error) throw new Error(`견적 품목 저장 실패: ${error.message}`);
+  if (error) throw new Error(`견적 저장 실패: ${error.message}`);
+  const result = data as { id?: string } | null;
+  if (!result?.id) throw new Error("견적 저장 결과가 올바르지 않습니다.");
+  return result.id;
 }
 
 /** 견적 목록 (최신순). 합계는 저장된 스냅샷 사용(저장 시 라인에서 재계산됨). */
@@ -300,63 +285,34 @@ export async function getQuotation(id: string): Promise<Quotation | null> {
   );
 }
 
-/** 견적 등록 — 번호 발번 + 헤더 + 라인. */
+/** 견적 등록 — save_quotation 트랜잭션으로 번호+헤더+라인 원자 저장. */
 export async function createQuotation(
   input: QuotationInput,
 ): Promise<Quotation> {
-  const supabase = createSupabaseServerClient();
   const totals = computeTotals(input);
   if (totals.total < 0) {
     throw new Error("할인이 소계를 초과할 수 없습니다.");
   }
-  // 음수 합계 가드를 발번보다 먼저 — 검증 실패 시 번호를 소모하지 않게.
-  const number = await generateQuotationNumber(
-    supabase,
-    periodOf(input.quotationDate),
-  );
+  const id = await saveViaRpc(null, input, totals);
 
-  const { data, error } = await supabase
-    .from("quotations")
-    .insert(buildHeader(input, totals, number))
-    .select("id")
-    .single();
-  if (error) throw new Error(`견적 등록 실패: ${error.message}`);
-
-  const quotationId = (data as { id: string }).id;
-  await insertLines(supabase, quotationId, input.lines);
-
-  const created = await getQuotation(quotationId);
+  const created = await getQuotation(id);
   if (!created) throw new Error("견적 등록 후 조회에 실패했습니다.");
   return created;
 }
 
 /**
- * 견적 수정 (정정). 번호는 불변(원칙 6). 라인은 통째로 교체.
+ * 견적 수정 (정정). 번호는 불변(원칙 6). 헤더+라인 교체를 단일 트랜잭션으로(원자성).
  * 삭제 기능은 없다 — 종결은 상태(rejected/expired)로 (원칙 5).
  */
 export async function updateQuotation(
   id: string,
   input: QuotationInput,
 ): Promise<Quotation> {
-  const supabase = createSupabaseServerClient();
   const totals = computeTotals(input);
   if (totals.total < 0) {
     throw new Error("할인이 소계를 초과할 수 없습니다.");
   }
-
-  const { error: headerErr } = await supabase
-    .from("quotations")
-    .update(buildHeader(input, totals))
-    .eq("id", id);
-  if (headerErr) throw new Error(`견적 수정 실패: ${headerErr.message}`);
-
-  const { error: delErr } = await supabase
-    .from("quotation_items")
-    .delete()
-    .eq("quotation_id", id);
-  if (delErr) throw new Error(`견적 품목 갱신 실패: ${delErr.message}`);
-
-  await insertLines(supabase, id, input.lines);
+  await saveViaRpc(id, input, totals);
 
   const updated = await getQuotation(id);
   if (!updated) throw new Error("견적 수정 후 조회에 실패했습니다.");
