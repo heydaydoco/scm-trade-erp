@@ -58,6 +58,7 @@ export default async function InquiriesPage() {
                 <th className="px-4 py-3 font-medium">인코텀즈</th>
                 <th className="px-4 py-3 font-medium">결제조건</th>
                 <th className="px-4 py-3 font-medium">상태</th>
+                <th className="px-4 py-3 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -115,6 +116,14 @@ export default async function InquiriesPage() {
                     <Badge variant={STATUS_VARIANT[q.status] ?? "zinc"}>
                       {labelOf(INQUIRY_STATUS, q.status)}
                     </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      href={`/quotations/new?from=${q.id}`}
+                      className="whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                    >
+                      → 견적 생성
+                    </Link>
                   </td>
                 </tr>
               ))}
