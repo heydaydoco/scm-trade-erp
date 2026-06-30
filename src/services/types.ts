@@ -77,3 +77,58 @@ export interface ItemInput {
   description: string | null;
   active: boolean;
 }
+
+/**
+ * 도메인 타입 — 문의(Inquiry) (SPEC B1, 문서 사슬의 시작점).
+ *
+ * 물리 테이블 inquiries 이식. 참조 두 종류:
+ *  - 거래처: partnerId(=company_id) 정식 참조. partnerName/Country는 조인된 표시용.
+ *  - 품목: productId 소프트 링크(품목 마스터에서 고른 경우만, NULL 허용) +
+ *          productName 자유텍스트 스냅샷(카탈로그에 없어도 입력 가능).
+ * inquiries 행 ↔ Inquiry 매핑은 services/inquiries.ts 가 전담한다.
+ */
+export interface Inquiry {
+  id: string;
+  partnerId: string | null;
+  partnerName: string | null; // 조인 표시용 (companies.company_name)
+  partnerCountry: string | null; // 조인 표시용 (companies.country)
+  inquiryDate: string | null; // YYYY-MM-DD
+  productId: string | null; // 소프트 링크
+  productName: string; // 자유텍스트 스냅샷
+  hsCode: string | null;
+  quantity: number | null;
+  unit: string | null;
+  transport: string | null; // sea/air/both
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  incoterms: string | null;
+  paymentTerms: string | null;
+  requiredDeliveryDate: string | null;
+  sampleRequested: boolean;
+  ndaRequired: boolean;
+  status: string; // received/reviewing/quoted/negotiating/won/lost
+  notes: string | null;
+}
+
+/** 문의 등록/수정 입력 (id·조인 표시필드 제외). */
+export interface InquiryInput {
+  partnerId: string | null;
+  inquiryDate: string | null;
+  productId: string | null;
+  productName: string;
+  hsCode: string | null;
+  quantity: number | null;
+  unit: string | null;
+  transport: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  incoterms: string | null;
+  paymentTerms: string | null;
+  requiredDeliveryDate: string | null;
+  sampleRequested: boolean;
+  ndaRequired: boolean;
+  status: string;
+  notes: string | null;
+}

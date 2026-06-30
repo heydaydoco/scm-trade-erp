@@ -51,14 +51,35 @@ export const INCOTERMS: Code[] = [
 export const TRANSPORT: Code[] = [
   { code: "sea", label: "해상 (Sea)" },
   { code: "air", label: "항공 (Air)" },
+  { code: "both", label: "해상+항공" },
 ];
 
-/** 문의 상태 (정확한 코드값은 P1.4 문의 화면에서 기존 데이터와 맞춰 확정) */
+/**
+ * 결제조건 — 무역 표준 조합. code 값은 기존 inquiries.payment_terms 문자열과
+ * 그대로 맞춰 기존 데이터 표시·재저장이 깨지지 않게 한다. (자유값은 sticky 옵션으로 보존)
+ */
+export const PAYMENT_TERMS: Code[] = [
+  { code: "T/T 30% in advance", label: "T/T 30% 선급" },
+  { code: "T/T 50% in advance", label: "T/T 50% 선급" },
+  { code: "T/T 100% in advance", label: "T/T 100% 선급" },
+  { code: "L/C at sight", label: "L/C at sight (일람불)" },
+  { code: "L/C 30days", label: "L/C 30 days" },
+  { code: "L/C 60days", label: "L/C 60 days" },
+  { code: "L/C 90days", label: "L/C 90 days" },
+  { code: "CAD", label: "CAD (서류상환)" },
+  { code: "O/A 30days", label: "O/A 30 days" },
+  { code: "O/A 60days", label: "O/A 60 days" },
+  { code: "O/A 90days", label: "O/A 90 days" },
+];
+
+/** 문의 상태 — 실제 inquiries.status 값에 맞춤 (P1.4에서 확정). */
 export const INQUIRY_STATUS: Code[] = [
-  { code: "new", label: "신규" },
+  { code: "received", label: "접수" },
   { code: "reviewing", label: "검토중" },
-  { code: "quoted", label: "견적완료" },
-  { code: "closed", label: "종료" },
+  { code: "quoted", label: "견적발송" },
+  { code: "negotiating", label: "협상중" },
+  { code: "won", label: "수주성공" },
+  { code: "lost", label: "수주실패" },
 ];
 
 /** 견적 상태 (정확한 코드값은 P1.5 견적 화면에서 확정) */
