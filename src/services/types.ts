@@ -39,3 +39,41 @@ export interface PartnerInput {
   notes: string | null;
   active: boolean;
 }
+
+/**
+ * 도메인 타입 — 품목(Item) (SPEC A1 / §5 items 모델).
+ *
+ * 원칙 7: 화면은 물리 테이블(products)이 아니라 이 도메인 타입으로만 대화한다.
+ * products 행 ↔ Item 매핑은 services/items.ts 가 전담한다.
+ */
+export interface Item {
+  id: string;
+  code: string | null; // 품목코드(SKU)
+  name: string; // 품목명
+  hsCode: string | null; // HS 코드
+  baseUom: string | null; // 기본 단위
+  stdPrice: number | null; // 표준단가
+  currency: string | null;
+  originCountry: string | null; // 원산지
+  isDangerous: boolean; // 위험물여부
+  lotManaged: boolean; // 로트 관리여부
+  serialManaged: boolean; // 시리얼 관리여부
+  description: string | null; // 설명/비고
+  active: boolean;
+}
+
+/** 품목 등록/수정 입력 (id·시스템 필드 제외). */
+export interface ItemInput {
+  code: string | null;
+  name: string;
+  hsCode: string | null;
+  baseUom: string | null;
+  stdPrice: number | null;
+  currency: string | null;
+  originCountry: string | null;
+  isDangerous: boolean;
+  lotManaged: boolean;
+  serialManaged: boolean;
+  description: string | null;
+  active: boolean;
+}
