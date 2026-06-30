@@ -11,6 +11,7 @@ import {
   INCOTERMS,
   PAYMENT_TERMS,
   QUOTATION_STATUS,
+  round2,
   TRANSPORT,
   UNITS,
 } from "@/services/codes";
@@ -51,7 +52,8 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString(undefined, {
+  // 고정 로케일 — SSR(서버)과 클라이언트 출력이 결정적이어야 하이드레이션 불일치가 없다.
+  return n.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -144,11 +146,12 @@ export function QuotationForm({
     setOpenKey(null);
   }
 
+  // 서버 lineAmount/computeTotals와 동일하게 라인별 반올림 후 합산(원칙 2: 화면=저장=인쇄).
   const rowAmount = (l: LineRow) =>
-    (parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0);
-  const subtotal = lines.reduce((s, l) => s + rowAmount(l), 0);
+    round2((parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0));
+  const subtotal = round2(lines.reduce((s, l) => s + rowAmount(l), 0));
   const discountNum = parseFloat(discount) || 0;
-  const total = subtotal - discountNum;
+  const total = round2(subtotal - discountNum);
   const symbol = CURRENCY_SYMBOL[currency] ?? "";
 
   // 서버로 보낼 라인 JSON (빈 라인 제외; amount는 서버가 계산)

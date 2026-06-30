@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { DEFAULT_QUOTATION_TERMS } from "./codes";
+import { DEFAULT_QUOTATION_TERMS, round2 } from "./codes";
 import type {
   Inquiry,
   Quotation,
@@ -59,7 +59,7 @@ const LINE_COLUMNS =
 
 /** 라인 금액 = 수량 × 단가 (소수 2자리 정리로 부동소수 드리프트 방지). */
 export function lineAmount(quantity: number, unitPrice: number): number {
-  return Math.round((quantity * unitPrice + Number.EPSILON) * 100) / 100;
+  return round2(quantity * unitPrice);
 }
 
 /** quotation_date(YYYY-MM-DD)에서 발번 기간(YYYYMM) 도출. 없으면 오늘 기준. */
@@ -73,11 +73,10 @@ function computeTotals(input: QuotationInput): {
   subtotal: number;
   total: number;
 } {
-  const subtotal = input.lines.reduce(
-    (sum, l) => sum + lineAmount(l.quantity, l.unitPrice),
-    0,
+  const subtotal = round2(
+    input.lines.reduce((sum, l) => sum + lineAmount(l.quantity, l.unitPrice), 0),
   );
-  return { subtotal, total: subtotal - (input.discount ?? 0) };
+  return { subtotal, total: round2(subtotal - (input.discount ?? 0)) };
 }
 
 function mapLineRow(row: QuotationLineRow): QuotationLine {
@@ -109,10 +108,12 @@ function assembleQuotation(
   const discount = Number(row.discount ?? 0);
   const subtotal =
     lineRows != null
-      ? lines.reduce((s, l) => s + l.amount, 0)
+      ? round2(lines.reduce((s, l) => s + l.amount, 0))
       : Number(row.subtotal ?? 0);
   const total =
-    lineRows != null ? subtotal - discount : Number(row.total_amount ?? 0);
+    lineRows != null
+      ? round2(subtotal - discount)
+      : Number(row.total_amount ?? 0);
 
   return {
     id: row.id,
@@ -304,11 +305,15 @@ export async function createQuotation(
   input: QuotationInput,
 ): Promise<Quotation> {
   const supabase = createSupabaseServerClient();
+  const totals = computeTotals(input);
+  if (totals.total < 0) {
+    throw new Error("할인이 소계를 초과할 수 없습니다.");
+  }
+  // 음수 합계 가드를 발번보다 먼저 — 검증 실패 시 번호를 소모하지 않게.
   const number = await generateQuotationNumber(
     supabase,
     periodOf(input.quotationDate),
   );
-  const totals = computeTotals(input);
 
   const { data, error } = await supabase
     .from("quotations")
@@ -335,6 +340,9 @@ export async function updateQuotation(
 ): Promise<Quotation> {
   const supabase = createSupabaseServerClient();
   const totals = computeTotals(input);
+  if (totals.total < 0) {
+    throw new Error("할인이 소계를 초과할 수 없습니다.");
+  }
 
   const { error: headerErr } = await supabase
     .from("quotations")

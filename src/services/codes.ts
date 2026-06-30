@@ -114,3 +114,11 @@ export const PARTNER_TYPE_LABEL: Record<string, string> = {
 export function labelOf(codes: Code[], code: string | null | undefined): string {
   return codes.find((c) => c.code === code)?.label ?? code ?? "-";
 }
+
+/**
+ * 금액 2자리 반올림 (부동소수 드리프트 방지). 클라이언트·서버가 공유해
+ * '화면 합계 = 저장 합계 = 인쇄 합계'를 보장한다 (원칙 2).
+ */
+export function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
