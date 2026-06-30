@@ -167,7 +167,7 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - A7. 마스터 변경 관리 (ECN/설계변경, 중복 자재 방지, 필드 오너십) `[P7]`
 
 ### B. Order-to-Cash (수주→대금)
-- B1. 문의 접수 (Inquiry) ✅ *이미 구현* `[P1]`
+- B1. 문의 접수 (Inquiry) ✅ *구현(P1.4 — 이식 + 품목 소프트링크)* `[P1]`
 - B2. 견적 (Quotation / Proforma Invoice) ✅ *이미 구현* `[P1]`
 - B3. 수주 (Sales Order, 헤더-라인, 견적 참조 생성) `[P2]`
 - B4. 주문 확인서 (Order Confirmation) 발행 `[P2]`
@@ -383,7 +383,8 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 - **P1 — 마스터 + 영업 초입**: 품목·거래처·코드테이블 / 문의·견적 (기존 기능 이식 + 정리)
   - ✅ **거래처(P1.2)·품목(P1.3) 마스터 완료** (2026-06-30) — 목록 + 등록/수정, **삭제 없음 → active 토글**(원칙 5). 기존 `companies`/`products` 테이블 **재사용** + 서비스 레이어에서 도메인(`Partner`/`Item`)으로 매핑(원칙 7). 화면은 물리 테이블을 모름.
   - 품목 마스터는 P1.3에서 `products`에 컬럼 추가(품목코드·원산지·위험물·로트/시리얼 관리여부·active)로 A1 전체 필드 충족. (마이그레이션: `db/migrations/p1.3_items.sql`)
-  - ⏳ 남음: 코드테이블 정리, 문의(P1.4)·견적(P1.5)
+  - ✅ **문의(P1.4) 완료** (2026-06-30) — `inquiries` 이식. 거래처는 `company_id` **정식 참조**(PostgREST 임베드 조인으로 거래처명 표시), 품목은 `product_id` **소프트 링크**(품목 마스터에서 고르면 연결, 미등록은 자유텍스트 + 링크 해제 가능). 삭제 대신 상태(`lost`)로 종결(원칙 5). 코드값 정리(INQUIRY_STATUS 실제값 확정·TRANSPORT both·PAYMENT_TERMS 신설). (마이그레이션: `db/migrations/p1.4_inquiries.sql`)
+  - ⏳ 남음: 견적(P1.5 — 문의→견적 참조 생성, 헤더-라인)
 - **P2 — 수주 + 환율 + 감사로그**: SO(참조생성), 주문확인서, 환율 대장, audit_log 기반 깔기
 - **P3 — 구매 + 선적부킹 + 기일엔진**: PO, 선적부킹/마일스톤, 기일 역산 알림
 - **P4 — 재고 원장 + 출고/입고 + 서류생성 + 문서흐름**: 재고 코어, Delivery/GR(참조생성), CI/PL 생성기, 흐름 추적 화면 ← **여기까지가 진짜 ERP의 1차 완성**
@@ -411,4 +412,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v1.2 · P0 완료(2026-06-29) · P1 진행 중 — 거래처(P1.2)·품목(P1.3) 마스터 완료(2026-06-30) · 다음: 문의(P1.4)*
+*문서 버전: v1.3 · P0 완료(2026-06-29) · P1 진행 중 — 거래처(P1.2)·품목(P1.3) 마스터 + 문의(P1.4) 완료(2026-06-30) · 다음: 견적(P1.5)*
