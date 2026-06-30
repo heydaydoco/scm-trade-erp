@@ -82,7 +82,7 @@ export const INQUIRY_STATUS: Code[] = [
   { code: "lost", label: "수주실패" },
 ];
 
-/** 견적 상태 (정확한 코드값은 P1.5 견적 화면에서 확정) */
+/** 견적 상태 (P1.5에서 확정 — 실제 quotations.status 값). */
 export const QUOTATION_STATUS: Code[] = [
   { code: "draft", label: "작성중" },
   { code: "sent", label: "발송" },
@@ -90,6 +90,12 @@ export const QUOTATION_STATUS: Code[] = [
   { code: "rejected", label: "반려" },
   { code: "expired", label: "만료" },
 ];
+
+/** 새 견적 기본 약관 (Proforma Invoice Terms). 서비스·폼이 공유(클라이언트 안전). */
+export const DEFAULT_QUOTATION_TERMS =
+  "Prices are valid for 30 days from the date of quotation.\n" +
+  "Delivery within 60 days after PO confirmation.\n" +
+  "All prices are subject to final confirmation upon order.";
 
 /** 거래처 구분(도메인) 단일 출처 — 선택 가능한 3종. DB company_type ↔ 매핑은 services/partners.ts */
 export const PARTNER_TYPES: Code[] = [

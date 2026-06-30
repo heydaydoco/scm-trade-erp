@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { DEFAULT_QUOTATION_TERMS } from "./codes";
 import type {
   Inquiry,
   Quotation,
@@ -53,12 +54,6 @@ const QUOTATION_COLUMNS =
 
 const LINE_COLUMNS =
   "id, quotation_id, product_id, product_name, hs_code, description, quantity, unit, unit_price, amount, sort_order";
-
-/** 새 견적의 기본 약관 (없으면 이 문구로 시작). */
-export const DEFAULT_QUOTATION_TERMS =
-  "Prices are valid for 30 days from the date of quotation.\n" +
-  "Delivery within 60 days after PO confirmation.\n" +
-  "All prices are subject to final confirmation upon order.";
 
 /* ---------- 순수 계산/매핑 (I/O 없음 → 단위 테스트 가능) ---------- */
 
