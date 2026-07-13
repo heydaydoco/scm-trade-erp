@@ -296,7 +296,9 @@ export function SalesOrderForm({
               v?.exchangeRate ??
               (salesOrder?.exchangeRate != null
                 ? String(salesOrder.exchangeRate)
-                : "1")
+                : draft?.exchangeRate != null
+                  ? String(draft.exchangeRate)
+                  : "1")
             }
           />
         </Field>
