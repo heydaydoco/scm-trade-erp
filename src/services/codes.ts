@@ -91,6 +91,13 @@ export const QUOTATION_STATUS: Code[] = [
   { code: "expired", label: "만료" },
 ];
 
+/** 감사 동작 — audit_log.action 값 → 한글 라벨 (P2.1, 원칙 4). */
+export const AUDIT_ACTION: Code[] = [
+  { code: "INSERT", label: "등록" },
+  { code: "UPDATE", label: "수정" },
+  { code: "DELETE", label: "삭제" },
+];
+
 /** 새 견적 기본 약관 (Proforma Invoice Terms). 서비스·폼이 공유(클라이언트 안전). */
 export const DEFAULT_QUOTATION_TERMS =
   "Prices are valid for 30 days from the date of quotation.\n" +

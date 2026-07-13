@@ -213,3 +213,21 @@ export interface QuotationInput {
   termsConditions: string | null;
   lines: QuotationLineInput[];
 }
+
+/**
+ * 도메인 타입 — 변경 이력(AuditLogEntry) (SPEC I5, 원칙 5 — 불변·삭제 없음).
+ *
+ * 물리 테이블 audit_log 이식. **기록은 오직 DB 트리거(fn_audit)만** 수행하고
+ * 앱은 읽기만 한다 → 위조·삭제 불가. 화면은 이 도메인 타입으로만 대화한다(원칙 7).
+ * before/after는 변경 전후 행 전체(jsonb) 스냅샷 — 무엇이 바뀌었는지 재구성 가능.
+ */
+export interface AuditLogEntry {
+  id: string;
+  tableName: string; // 어떤 테이블이 바뀌었나 (예: quotations)
+  recordId: string | null; // 대상 행의 id (테이블마다 타입 달라도 text로)
+  action: string; // INSERT / UPDATE / DELETE
+  before: Record<string, unknown> | null; // 변경 전 행 (INSERT면 null)
+  after: Record<string, unknown> | null; // 변경 후 행 (DELETE면 null)
+  actor: string; // 작성자 (인증 도입 전에는 'system')
+  at: string; // 발생 시각 (ISO, timestamptz)
+}
