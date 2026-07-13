@@ -169,8 +169,8 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 ### B. Order-to-Cash (수주→대금)
 - B1. 문의 접수 (Inquiry) ✅ *구현(P1.4 — 이식 + 품목 소프트링크)* `[P1]`
 - B2. 견적 (Quotation / Proforma Invoice) ✅ *구현(P1.5 — 헤더-라인·참조생성·원자적 발번·인쇄)* `[P1]`
-- B3. 수주 (Sales Order, 헤더-라인, 견적 참조 생성) `[P2]`
-- B4. 주문 확인서 (Order Confirmation) 발행 `[P2]`
+- B3. 수주 (Sales Order, 헤더-라인, 견적 참조 생성) ✅ *구현(P2.2 — save_sales_order 원자 저장·견적 참조생성·감사 상속)* `[P2]`
+- B4. 주문 확인서 (Order Confirmation) 발행 ✅ *구현(P2.2 — 전용 인쇄 페이지 → 브라우저 PDF)* `[P2]`
 - B5. ATP(납기 가용성 점검) — 현재고 + 입고예정 − 기확약 `[P6]`
 - B6. 재고 할당(Allocation) — 부족 시 배분 룰 `[P6]`
 - B7. **백오더(Backorder) 관리** — 미충족 수량 추적·재공급 연결 `[P6]`
@@ -388,6 +388,7 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   - ✅ **P1 완료** (2026-06-30) — 마스터(거래처·품목) + 영업 초입(문의·견적) 이식·정리 끝. 코드값은 `services/codes.ts` 상수로 일원화(편집형 `code_tables`는 후순위). **다음: P2(수주 SO·환율 대장·감사로그).**
 - **P2 — 수주 + 환율 + 감사로그**: SO(참조생성), 주문확인서, 환율 대장, audit_log 기반 깔기
   - ✅ **P2.1 감사 추적 기반 완료** (2026-07-13) — 다중에이전트 설계로 P2를 ①감사기반 → ②수주(SO) → ③환율대장 순서 확정. 감사를 먼저 깐 이유: 가장 작고 순수추가·완전가역이라 오너 마이그레이션 절차를 안전하게 리허설하고, SO가 생기기 전에 I5 "처음부터"·원칙 5 공백 제거, **제네릭 트리거라 P2.2에서 SO는 트리거 2줄로 태생부터 감사**됨. 구현: 추가-전용 `audit_log` + 범용 트리거 `fn_audit`(SECURITY DEFINER, `to_jsonb(old/new)` 전후 스냅샷)를 `quotations` 헤더에 부착 — **라인테이블(quotation_items)은 미부착**(save_quotation의 라인 전량 DELETE+재INSERT로 인한 감사 폭주·시각적 '삭제' 모순 방지). 앱은 SELECT만(위조·삭제 불가, 원칙 5), 기록은 DB 트리거 전용. 읽기전용 `/audit` 화면(before→after 변경키 요약) + 사이드바 '관리' 그룹. (마이그레이션: `db/migrations/p2.1_audit_log.sql`, 오너 실행 완료) **다음: P2.2 수주(SO)+주문확인서 → P2.3 환율 대장.**
+  - ✅ **P2.2 수주(SO)+주문확인서 완료** (2026-07-13) — 견적 모듈 미러: `sales_orders`/`so_lines` 신규 헤더-라인, `save_sales_order` RPC(save_quotation 미러·원자적, 3-arg `next_doc_number('sales_order','SO',period)` 별도 카운터), `salesOrders.ts` 서비스, 등록/수정 폼·목록·상세·**주문확인서(Order Confirmation) 인쇄**. **견적→수주 참조 생성**(원칙 3, `/sales-orders/new?from=`, 라인별 `ref_quotation_line_id` 스냅샷 포인터=FK아님). `partner_id`(SPEC 표준)→companies FK 임베드. 잔량/출고수량 컬럼 없음(원칙 1). exchange_rate 확정시점 스냅샷(원칙 1-B); `fx_source`/`fx_quoted_at`는 P2.3용 미리 심음. **P2.1 범용 감사 트리거를 2줄로 상속**(수주도 태생부터 감사). 다중에이전트 정합성 리뷰로 참조생성 시 환율 스냅샷 손실 버그 1건 교정. (마이그레이션: `db/migrations/p2.2_sales_orders.sql` + PostgREST 스키마 캐시 `notify pgrst`, 오너 실행 완료) **다음: P2.3 환율 대장(fx_rates) → P2 완료.**
 - **P3 — 구매 + 선적부킹 + 기일엔진**: PO, 선적부킹/마일스톤, 기일 역산 알림
 - **P4 — 재고 원장 + 출고/입고 + 서류생성 + 문서흐름**: 재고 코어, Delivery/GR(참조생성), CI/PL 생성기, 흐름 추적 화면 ← **여기까지가 진짜 ERP의 1차 완성**
   - ⚠️ 재고 원장 테이블은 **이 단계부터 로트/시리얼/위치 칸을 포함**해 만든다. (P5에서 컬럼을 추가하면 P4에 쌓인 과거 기록은 영원히 비어 소급 불가)
@@ -414,4 +415,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v1.5 · P0·P1 완료(2026-06-30) + P2 진행 중 — P2.1 감사 추적 기반 완료(2026-07-13, audit_log 범용 트리거 · 읽기전용 /audit). 다음: P2.2 수주 SO·주문확인서 → P2.3 환율 대장*
+*문서 버전: v1.6 · P0·P1 완료(2026-06-30) + P2 진행 중 — P2.1 감사 추적 기반 + P2.2 수주(SO)·주문확인서 완료(2026-07-13). 다음: P2.3 환율 대장 → P2 완료 → P3(구매 PO·선적·기일엔진)*
