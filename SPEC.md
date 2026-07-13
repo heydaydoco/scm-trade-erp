@@ -244,7 +244,7 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - I2. SCM KPI (납기준수율 OTIF, 재고회전율, DSO, 수주잔고) `[P8]`
 - I3. 문서 흐름 추적 화면 (전표 사슬 전체 조회) `[P4]`
 - I4. 결재/승인 워크플로 (기안→검토→승인→반려, 대결/전결) `[P7]`
-- I5. 감사 추적(Audit Log) — 모든 변경 이력 `[P2]` (처음부터)
+- I5. 감사 추적(Audit Log) — 모든 변경 이력 ✅ *구현(P2.1 — 범용 DB 트리거 `fn_audit`, quotations 헤더 감사, 읽기전용 `/audit`)* `[P2]` (처음부터)
 - I6. 사용자/권한 (역할 기반 RBAC, 부서별 접근) `[P8]`
 - I7. 알림 엔진 (기일 D-7/D-3/D-1, 발주점, 미수금) `[P6]`
 
@@ -387,6 +387,7 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   - ✅ **견적(P1.5) 완료** (2026-06-30) — `quotations`+`quotation_items` **헤더-라인**(원칙 2, 첫 등장). 문의→견적 **참조 생성**(원칙 3, `/quotations/new?from=`), **원자적 발번**(원칙 6 — P1.1 `next_doc_number(doc_type='quotation',...)` 호출, `db/migrations/p1.1_doc_numbering.sql`에 소급 기록), 합계는 항상 **라인에서 재계산**, 동적 라인 에디터 + 품목 검색, **인쇄용 Proforma Invoice**(전용 페이지 → 브라우저 PDF). 삭제 없음(상태로 종결, 원칙 5). 자사정보 플레이스홀더: `src/config/company.ts`. **저장은 단일 트랜잭션 RPC `save_quotation`로 원자 처리**(번호+헤더+라인 → 실패 시 전부 롤백, 데이터 손실·유령전표·결번 차단 — `db/migrations/p1.5_save_quotation.sql`; P2 SO/PO 저장의 토대). 다중에이전트 정합성 리뷰로 합계 반올림·음수합계·원자성 결함 교정.
   - ✅ **P1 완료** (2026-06-30) — 마스터(거래처·품목) + 영업 초입(문의·견적) 이식·정리 끝. 코드값은 `services/codes.ts` 상수로 일원화(편집형 `code_tables`는 후순위). **다음: P2(수주 SO·환율 대장·감사로그).**
 - **P2 — 수주 + 환율 + 감사로그**: SO(참조생성), 주문확인서, 환율 대장, audit_log 기반 깔기
+  - ✅ **P2.1 감사 추적 기반 완료** (2026-07-13) — 다중에이전트 설계로 P2를 ①감사기반 → ②수주(SO) → ③환율대장 순서 확정. 감사를 먼저 깐 이유: 가장 작고 순수추가·완전가역이라 오너 마이그레이션 절차를 안전하게 리허설하고, SO가 생기기 전에 I5 "처음부터"·원칙 5 공백 제거, **제네릭 트리거라 P2.2에서 SO는 트리거 2줄로 태생부터 감사**됨. 구현: 추가-전용 `audit_log` + 범용 트리거 `fn_audit`(SECURITY DEFINER, `to_jsonb(old/new)` 전후 스냅샷)를 `quotations` 헤더에 부착 — **라인테이블(quotation_items)은 미부착**(save_quotation의 라인 전량 DELETE+재INSERT로 인한 감사 폭주·시각적 '삭제' 모순 방지). 앱은 SELECT만(위조·삭제 불가, 원칙 5), 기록은 DB 트리거 전용. 읽기전용 `/audit` 화면(before→after 변경키 요약) + 사이드바 '관리' 그룹. (마이그레이션: `db/migrations/p2.1_audit_log.sql`, 오너 실행 완료) **다음: P2.2 수주(SO)+주문확인서 → P2.3 환율 대장.**
 - **P3 — 구매 + 선적부킹 + 기일엔진**: PO, 선적부킹/마일스톤, 기일 역산 알림
 - **P4 — 재고 원장 + 출고/입고 + 서류생성 + 문서흐름**: 재고 코어, Delivery/GR(참조생성), CI/PL 생성기, 흐름 추적 화면 ← **여기까지가 진짜 ERP의 1차 완성**
   - ⚠️ 재고 원장 테이블은 **이 단계부터 로트/시리얼/위치 칸을 포함**해 만든다. (P5에서 컬럼을 추가하면 P4에 쌓인 과거 기록은 영원히 비어 소급 불가)
@@ -413,4 +414,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v1.4 · P0·P1 완료(2026-06-30) — 거래처/품목 마스터 + 문의/견적(헤더-라인·참조생성·원자적 발번·인쇄). 다음: P2(수주 SO·환율 대장·감사로그)*
+*문서 버전: v1.5 · P0·P1 완료(2026-06-30) + P2 진행 중 — P2.1 감사 추적 기반 완료(2026-07-13, audit_log 범용 트리거 · 읽기전용 /audit). 다음: P2.2 수주 SO·주문확인서 → P2.3 환율 대장*
