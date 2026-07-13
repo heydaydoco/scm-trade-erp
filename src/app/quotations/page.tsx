@@ -101,7 +101,14 @@ export default async function QuotationsPage() {
                       {labelOf(QUOTATION_STATUS, q.status)}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <Link
+                      href={`/sales-orders/new?from=${q.id}`}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      → 수주
+                    </Link>
+                    <span className="mx-1.5 text-zinc-300">·</span>
                     <Link
                       href={`/quotations/${q.id}/print`}
                       className="text-xs text-zinc-500 hover:text-blue-700 hover:underline"

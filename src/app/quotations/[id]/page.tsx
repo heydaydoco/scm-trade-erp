@@ -46,12 +46,18 @@ export default async function EditQuotationPage({
       <div className="mb-6 flex items-start justify-between gap-4">
         <PageHeader title="견적 수정" subtitle={quotation.quotationNumber} />
       </div>
-      <div className="-mt-4 mb-4">
+      <div className="-mt-4 mb-4 flex flex-wrap gap-4">
         <Link
           href={`/quotations/${quotation.id}/print`}
           className="text-sm text-blue-700 hover:underline"
         >
           🖨 인쇄용 견적서(Proforma Invoice) 보기 →
+        </Link>
+        <Link
+          href={`/sales-orders/new?from=${quotation.id}`}
+          className="text-sm font-medium text-emerald-700 hover:underline"
+        >
+          📦 이 견적으로 수주 생성 →
         </Link>
       </div>
       <QuotationForm

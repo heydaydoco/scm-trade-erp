@@ -16,6 +16,7 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
     items: [
       { href: "/inquiries", label: "문의" },
       { href: "/quotations", label: "견적" },
+      { href: "/sales-orders", label: "수주" },
     ],
   },
   {
