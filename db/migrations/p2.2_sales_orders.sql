@@ -180,6 +180,10 @@ grant select on public.sales_orders to anon, authenticated;
 grant select on public.so_lines    to anon, authenticated;
 grant execute on function public.save_sales_order(uuid, jsonb, jsonb, text) to anon, authenticated;
 
+-- 6) PostgREST 스키마 캐시 새로고침 — 새 RPC를 API가 즉시 인식하게 한다.
+--    (없으면 "Could not find the function public.save_sales_order ... in the schema cache" 발생)
+notify pgrst, 'reload schema';
+
 -- ── 검증(선택) ──────────────────────────────────────────────────────────────
 --   select so_number, status, total_amount from public.sales_orders order by created_at desc limit 5;
 
