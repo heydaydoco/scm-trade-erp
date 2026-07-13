@@ -18,6 +18,10 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
       { href: "/quotations", label: "견적" },
     ],
   },
+  {
+    section: "관리",
+    items: [{ href: "/audit", label: "변경 이력" }],
+  },
 ];
 
 export function Sidebar() {
