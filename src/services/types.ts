@@ -231,3 +231,86 @@ export interface AuditLogEntry {
   actor: string; // 작성자 (인증 도입 전에는 'system')
   at: string; // 발생 시각 (ISO, timestamptz)
 }
+
+/**
+ * 도메인 타입 — 수주(Sales Order) (SPEC B3, 원칙 2 헤더-라인 · 원칙 3 참조생성).
+ *
+ * 물리 테이블 sales_orders(헤더) + so_lines(라인) 이식.
+ *  - 원칙 2: subtotal=Σ(line.amount), total=subtotal−discount 는 서비스가 항상 재계산.
+ *  - 원칙 3: refQuotationId/라인별 refQuotationLineId = 견적에서 참조 생성(스냅샷 포인터).
+ *  - 원칙 6: soNumber는 DB 원자적 발번(next_doc_number 'sales_order')으로만 채번.
+ *  - 원칙 1-B: 수주당 단일 통화 + exchangeRate(확정시점 고정).
+ *  - 원칙 1: 출고수량/잔량은 컬럼으로 저장하지 않는다 — Delivery(P4)에서 Σ로 파생.
+ */
+export interface SalesOrderLine {
+  id: string;
+  lineNo: number; // sort_order + 1 (표시용 1-based)
+  productId: string | null; // 품목 소프트 링크
+  productName: string; // 자유텍스트 스냅샷
+  hsCode: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unitPrice: number;
+  amount: number; // = quantity × unitPrice (파생 — 서비스가 계산)
+  refQuotationLineId: string | null; // 참조 출처 견적 라인(FK 아닌 스냅샷 포인터)
+}
+
+export interface SalesOrder {
+  id: string;
+  soNumber: string;
+  refQuotationId: string | null; // 참조 생성 출처(견적)
+  partnerId: string | null;
+  partnerName: string | null; // 조인 표시용
+  partnerCountry: string | null;
+  orderDate: string | null;
+  requestedDeliveryDate: string | null;
+  currency: string | null;
+  exchangeRate: number | null;
+  incoterms: string | null;
+  paymentTerms: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  transport: string | null;
+  discount: number; // 헤더 레벨 할인
+  subtotal: number; // = Σ(line.amount) (파생)
+  total: number; // = subtotal − discount (파생)
+  status: string; // draft/confirmed/completed/cancelled
+  notes: string | null;
+  termsConditions: string | null;
+  lines: SalesOrderLine[];
+}
+
+/** 수주 라인 입력 (id·amount 제외 — amount는 서비스가 계산). */
+export interface SalesOrderLineInput {
+  productId: string | null;
+  productName: string;
+  hsCode: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unitPrice: number;
+  refQuotationLineId: string | null; // 참조 출처 견적 라인(있으면 유지)
+}
+
+/** 수주 등록/수정 입력 (번호·합계·조인필드 제외 — 서비스가 채움). */
+export interface SalesOrderInput {
+  refQuotationId: string | null;
+  partnerId: string | null;
+  orderDate: string | null;
+  requestedDeliveryDate: string | null;
+  currency: string | null;
+  exchangeRate: number | null;
+  incoterms: string | null;
+  paymentTerms: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  transport: string | null;
+  discount: number;
+  status: string;
+  notes: string | null;
+  termsConditions: string | null;
+  lines: SalesOrderLineInput[];
+}

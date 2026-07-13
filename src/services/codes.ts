@@ -98,6 +98,20 @@ export const AUDIT_ACTION: Code[] = [
   { code: "DELETE", label: "삭제" },
 ];
 
+/** 수주 상태 (P2.2 — 실제 sales_orders.status 값). */
+export const SO_STATUS: Code[] = [
+  { code: "draft", label: "작성중" },
+  { code: "confirmed", label: "확정" },
+  { code: "completed", label: "완료" },
+  { code: "cancelled", label: "취소" },
+];
+
+/** 새 수주 기본 약관 (Order Confirmation Terms). 서비스·폼이 공유(클라이언트 안전). */
+export const DEFAULT_SO_TERMS =
+  "This order confirmation is subject to the agreed quotation terms.\n" +
+  "Delivery schedule to be confirmed upon order acceptance.\n" +
+  "Prices and quantities as listed; any change requires written agreement.";
+
 /** 새 견적 기본 약관 (Proforma Invoice Terms). 서비스·폼이 공유(클라이언트 안전). */
 export const DEFAULT_QUOTATION_TERMS =
   "Prices are valid for 30 days from the date of quotation.\n" +
