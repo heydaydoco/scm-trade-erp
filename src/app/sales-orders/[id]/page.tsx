@@ -61,6 +61,12 @@ export default async function EditSalesOrderPage({
         >
           🛒 이 수주로 발주 생성 →
         </Link>
+        <Link
+          href={`/shipments/new?fromSo=${salesOrder.id}`}
+          className="text-sm font-medium text-sky-700 hover:underline"
+        >
+          🚢 이 수주로 선적 부킹 →
+        </Link>
         {salesOrder.refQuotationId ? (
           <Link
             href={`/quotations/${salesOrder.refQuotationId}`}

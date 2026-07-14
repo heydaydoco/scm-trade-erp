@@ -54,6 +54,12 @@ export default async function EditPurchaseOrderPage({
         >
           🖨 발주서(Purchase Order) 보기 →
         </Link>
+        <Link
+          href={`/shipments/new?fromPo=${purchaseOrder.id}`}
+          className="text-sm font-medium text-sky-700 hover:underline"
+        >
+          🚢 이 발주로 선적 부킹 →
+        </Link>
         {purchaseOrder.refSalesOrderId ? (
           <Link
             href={`/sales-orders/${purchaseOrder.refSalesOrderId}`}

@@ -22,6 +22,9 @@ const TABLE_LABEL: Record<string, string> = {
   so_lines: "수주 품목",
   purchase_orders: "발주",
   po_lines: "발주 품목",
+  shipments: "선적",
+  shipment_orders: "선적 주문연결",
+  milestones: "선적 마일스톤",
 };
 
 /** timestamptz(UTC) → 한국시간 표시. */
