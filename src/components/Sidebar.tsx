@@ -20,6 +20,10 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
     ],
   },
   {
+    section: "재무",
+    items: [{ href: "/fx-rates", label: "환율 대장" }],
+  },
+  {
     section: "관리",
     items: [{ href: "/audit", label: "변경 이력" }],
   },
