@@ -2,6 +2,7 @@ import { listPartners } from "@/services/partners";
 import { listItems } from "@/services/items";
 import { getInquiry } from "@/services/inquiries";
 import { buildQuotationDraftFromInquiry } from "@/services/quotations";
+import { getLatestRates } from "@/services/fxRates";
 import type { QuotationInput } from "@/services/types";
 import {
   QuotationForm,
@@ -18,7 +19,11 @@ export default async function NewQuotationPage({
   searchParams: Promise<{ from?: string }>;
 }) {
   const { from } = await searchParams;
-  const [partners, items] = await Promise.all([listPartners(), listItems()]);
+  const [partners, items, rates] = await Promise.all([
+    listPartners(),
+    listItems(),
+    getLatestRates(),
+  ]);
 
   // 원칙 3 — 문의에서 참조 생성: ?from={inquiryId} 면 문의 데이터로 초안 시드
   let draft: QuotationInput | undefined;
@@ -54,6 +59,7 @@ export default async function NewQuotationPage({
         partners={partnerOptions}
         items={itemOptions}
         defaultDate={today}
+        rates={rates}
       />
     </div>
   );

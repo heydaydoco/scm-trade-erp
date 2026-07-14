@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getQuotation } from "@/services/quotations";
 import { listPartners } from "@/services/partners";
 import { listItems } from "@/services/items";
+import { getLatestRates } from "@/services/fxRates";
 import {
   QuotationForm,
   type ItemOption,
@@ -18,10 +19,11 @@ export default async function EditQuotationPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [quotation, partners, items] = await Promise.all([
+  const [quotation, partners, items, rates] = await Promise.all([
     getQuotation(id),
     listPartners(),
     listItems(),
+    getLatestRates(),
   ]);
   if (!quotation) notFound();
 
@@ -65,6 +67,7 @@ export default async function EditQuotationPage({
         partners={partnerOptions}
         items={itemOptions}
         defaultDate={today}
+        rates={rates}
       />
     </div>
   );

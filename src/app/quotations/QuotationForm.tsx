@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { saveQuotationAction, type QuotationFormState } from "./actions";
-import type { Quotation, QuotationInput } from "@/services/types";
+import type { LatestRate, Quotation, QuotationInput } from "@/services/types";
 import {
   CURRENCIES,
   CURRENCY_SYMBOL,
@@ -15,7 +15,10 @@ import {
   TRANSPORT,
   UNITS,
 } from "@/services/codes";
+import { BASE_CURRENCY } from "@/config/company";
+import { useFxPrefill } from "@/lib/useFxPrefill";
 import { Field, inputClass } from "@/components/Field";
+import { FxHint } from "@/components/FxHint";
 
 export interface PartnerOption {
   id: string;
@@ -65,12 +68,14 @@ export function QuotationForm({
   partners,
   items,
   defaultDate,
+  rates,
 }: {
   quotation?: Quotation;
   draft?: QuotationInput;
   partners: PartnerOption[];
   items: ItemOption[];
   defaultDate: string;
+  rates: Record<string, LatestRate>;
 }) {
   const [state, formAction, pending] = useActionState<
     QuotationFormState,
@@ -114,13 +119,29 @@ export function QuotationForm({
   const [openKey, setOpenKey] = useState<string | null>(null);
 
   // 통화·할인은 실시간 합계 표시를 위해 controlled
-  const [currency, setCurrency] = useState(
-    v?.currency ?? quotation?.currency ?? draft?.currency ?? "USD",
-  );
+  const initialCurrency =
+    v?.currency ?? quotation?.currency ?? draft?.currency ?? "USD";
+  const [currency, setCurrency] = useState(initialCurrency);
   const [discount, setDiscount] = useState(
     v?.discount ??
       (quotation ? String(quotation.discount) : draft ? String(draft.discount) : "0"),
   );
+
+  // 환율 프리필(원칙 1-B) — 통화 선택 시 대장 최신값 자동 채움, 수동 수정 가능.
+  // 견적은 확정 환율 스냅샷이 따로 없으므로(문의엔 환율 없음) 신규·문의드래프트 모두 프리필 대상.
+  // 기존 견적 수정(quotation)·에러재시드(v)는 저장된 값을 존중해 덮지 않는다.
+  // ※ 견적 RPC(save_quotation)는 출처 컬럼이 없어 rate만 저장한다(출처/고시시점 미저장 — 힌트는 세션 표시용).
+  const fx = useFxPrefill({
+    rates,
+    initialCurrency,
+    initialRate:
+      v?.exchangeRate ??
+      (quotation?.exchangeRate != null ? String(quotation.exchangeRate) : "1"),
+    initialSource: "",
+    initialQuotedAt: "",
+    autoPrefill: !quotation && !v,
+  });
+  const latest = fx.latestFor(currency);
 
   function patchLine(key: string, patch: Partial<LineRow>) {
     setLines((prev) =>
@@ -264,7 +285,10 @@ export function QuotationForm({
             name="currency"
             className={inputClass}
             value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            onChange={(e) => {
+              setCurrency(e.target.value);
+              fx.onCurrencyChange(e.target.value); // 대장 최신 환율 자동 채움
+            }}
           >
             {CURRENCIES.map((c) => (
               <option key={c.code} value={c.code}>
@@ -273,20 +297,17 @@ export function QuotationForm({
             ))}
           </select>
         </Field>
-        <Field label="환율 (기준통화 환산, 기본 1)">
+        <Field label={`환율 (1 ${currency} → ${BASE_CURRENCY} 환산)`}>
           <input
             name="exchangeRate"
             type="number"
             step="0.0001"
             min="0"
             className={inputClass}
-            defaultValue={
-              v?.exchangeRate ??
-              (quotation?.exchangeRate != null
-                ? String(quotation.exchangeRate)
-                : "1")
-            }
+            value={fx.rate}
+            onChange={(e) => fx.onRateEdit(e.target.value)}
           />
+          <FxHint currency={currency} latest={latest} source={fx.source} />
         </Field>
 
         <SectionTitle>거래 조건</SectionTitle>
