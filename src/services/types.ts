@@ -500,6 +500,32 @@ export interface Shipment {
   milestones: Milestone[];
 }
 
+/**
+ * 도메인 타입 — 임박 기일(DeadlineItem) (SPEC I7·E3, P3.3 기일 역산 알림).
+ *
+ * 여러 소스(선적 마일스톤·수주/발주 납기·견적 유효기일)의 날짜를 하나로 모아 D-day로 정렬한다.
+ *  - dDay = 기일(YYYY-MM-DD) − 오늘(**Asia/Seoul 달력 날짜**). 음수 = 지남(overdue).
+ *  - 읽기 전용 파생 뷰(스키마 없음) — 기존 날짜 컬럼을 계산할 뿐, 별도 테이블 없음.
+ */
+export interface DeadlineItem {
+  source: string; // milestone | so | po | quotation
+  sourceLabel: string; // '선적 마일스톤' | '수주 납기' | '발주 납기' | '견적 유효기일'
+  kind: string; // 세부 유형 (마일스톤 라벨 ETD/ETA…, '납기 요청일', '유효기일')
+  date: string; // YYYY-MM-DD (기일)
+  dDay: number; // 기일 − 오늘(KST). 음수=지남, 0=오늘, 양수=D-n
+  docType: string; // shipment | sales_order | purchase_order | quotation (링크용)
+  docId: string;
+  docNumber: string; // SHP-… / SO-… / PO-… / QT-…
+  partnerName: string | null;
+  memo: string | null;
+}
+
+/** 홈 대시보드 임박 요약 배지용. */
+export interface DeadlineSummary {
+  overdue: number; // 지남 (dDay < 0)
+  within7: number; // 7일 내 (0 ≤ dDay ≤ 7)
+}
+
 /** 선적 등록/수정 입력 (번호·조인필드 제외 — 서비스가 채움). 주문연결·마일스톤은 read와 동일 모양. */
 export interface ShipmentInput {
   direction: string | null;
