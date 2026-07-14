@@ -97,8 +97,12 @@ export function ShipmentForm({
   const msCounter = useRef(0);
   const makeKey = () => `ms-${msCounter.current++}`;
 
+  // 편집 모드: 저장된 null을 '선택 안 함'('')으로 왕복(무단 변경·스푸리어스 감사 방지, 원칙 5).
+  //   incoterms·partnerId(?? "")와 일관. 신규 모드: 기본 'sea'(UX·템플릿 버튼), draft 승계값 우선.
   const [transport, setTransport] = useState(
-    v?.transport ?? shipment?.transport ?? draft?.transport ?? "sea",
+    shipment
+      ? v?.transport ?? shipment.transport ?? ""
+      : v?.transport ?? draft?.transport ?? "sea",
   );
 
   // 이미 연결된 주문 제외한 추가 후보(중복 연결 1차 차단)
