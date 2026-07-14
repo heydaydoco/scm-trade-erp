@@ -20,6 +20,8 @@ const TABLE_LABEL: Record<string, string> = {
   quotation_items: "견적 품목",
   sales_orders: "수주",
   so_lines: "수주 품목",
+  purchase_orders: "발주",
+  po_lines: "발주 품목",
 };
 
 /** timestamptz(UTC) → 한국시간 표시. */

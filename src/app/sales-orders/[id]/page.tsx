@@ -55,6 +55,12 @@ export default async function EditSalesOrderPage({
         >
           🖨 주문확인서(Order Confirmation) 보기 →
         </Link>
+        <Link
+          href={`/purchase-orders/new?from=${salesOrder.id}`}
+          className="text-sm font-medium text-emerald-700 hover:underline"
+        >
+          🛒 이 수주로 발주 생성 →
+        </Link>
         {salesOrder.refQuotationId ? (
           <Link
             href={`/quotations/${salesOrder.refQuotationId}`}
