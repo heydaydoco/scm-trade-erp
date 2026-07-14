@@ -22,6 +22,32 @@
 --   · save_sales_order 미러 원자 저장(번호+헤더+주문연결+마일스톤 한 트랜잭션, 실패 시 전부 롤백).
 -- ============================================================================
 
+-- 0) 레거시 충돌 처리 (구 trade_erp HTML 앱이 만든 빈 shipments 테이블 대응).
+--    그 테이블은 스키마가 달라(partner_id 없음) 새 정의와 충돌해 42703을 낸다.
+--    **0행 + partner_id 없음**일 때만 타임스탬프 이름으로 옆으로 옮긴다 — 비파괴·가역·멱등.
+--    (우리 새 테이블은 partner_id가 있어 조건에서 제외되므로 재실행해도 안전.)
+do $$
+begin
+  if exists (
+        select 1 from information_schema.tables
+        where table_schema = 'public' and table_name = 'shipments'
+      )
+     and not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'shipments'
+          and column_name = 'partner_id'
+      )
+  then
+    if exists (select 1 from public.shipments limit 1) then
+      raise exception '레거시 shipments 테이블에 데이터가 있어 자동 이전할 수 없습니다. 수동 확인이 필요합니다.';
+    end if;
+    execute format(
+      'alter table public.shipments rename to shipments_legacy_%s',
+      to_char(now(), 'YYYYMMDDHH24MISS')
+    );
+  end if;
+end $$;
+
 -- 1) 선적 헤더 (부킹 + 일정 — 금액/품목 없음)
 create table if not exists public.shipments (
   id             uuid primary key default gen_random_uuid(),
