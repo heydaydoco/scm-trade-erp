@@ -314,3 +314,51 @@ export interface SalesOrderInput {
   termsConditions: string | null;
   lines: SalesOrderLineInput[];
 }
+
+/**
+ * 도메인 타입 — 환율 대장(FxRate) (SPEC F5, 원칙 1-B 돈=금액+통화 · 원칙 5 불변).
+ *
+ * 물리 테이블 fx_rates 이식(추가 전용). 견적·수주의 환율 프리필 소스이며,
+ * 문서는 이 대장을 FK로 참조하지 않는다 — 값만 스냅샷 복사(과거 문서 값 불변, 원칙 1-B).
+ *  - rate: **1단위 정규화값** (1 quoteCurrency = rate × baseCurrency).
+ *  - quoteUnit: 원본 고시단위(JPY=100 등). 원본 고시값 = rate × quoteUnit (표시·감사용).
+ */
+export interface FxRate {
+  id: string;
+  baseCurrency: string;
+  quoteCurrency: string;
+  rate: number; // 1단위 정규화값
+  quoteUnit: number; // 고시단위 (JPY=100, 기본 1)
+  rateDate: string | null; // YYYY-MM-DD (적용 고시일)
+  source: string | null;
+  quotedAt: string | null; // ISO (고시 시점)
+  note: string | null;
+  createdAt: string | null;
+}
+
+/**
+ * 환율 등록 입력. 사용자는 **은행 고시값 그대로**(quotedRate) + 고시단위(quoteUnit)를 준다.
+ * 정규화(rate = quotedRate / quoteUnit)는 서비스 한 곳에서 수행(원칙 7) — 100배 함정 차단.
+ */
+export interface FxRateInput {
+  baseCurrency: string;
+  quoteCurrency: string;
+  quotedRate: number; // 은행 고시 그대로 (예: 100엔당 905)
+  quoteUnit: number; // 고시단위 (예: 100)
+  rateDate: string | null;
+  source: string | null;
+  quotedAt: string | null;
+  note: string | null;
+}
+
+/**
+ * 통화별 최신 환율 (프리필용). getLatestRates()가 통화코드 → 이 값 맵을 돌려준다.
+ * rate는 1단위 정규화값이라 문서 exchangeRate에 그대로 넣으면 된다.
+ */
+export interface LatestRate {
+  rate: number; // 1단위 정규화값
+  quoteUnit: number;
+  source: string | null;
+  quotedAt: string | null;
+  rateDate: string | null;
+}

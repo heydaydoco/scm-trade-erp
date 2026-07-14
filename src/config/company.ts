@@ -15,3 +15,11 @@ export const SELLER = {
   email: "sales@yourcompany.com", // ← 이메일
   bizRegNo: "000-00-00000", // ← 사업자등록번호
 };
+
+/**
+ * 기준통화(Base Currency) — 원칙 1-B.
+ * 모든 외화 금액을 이 통화로 환산해 합산·보고한다. 환율 대장(fx_rates)과 문서 환율은
+ * "1 문서통화 = rate × 기준통화"로 표기한다 (예: 1 USD = 1,350 KRW → rate=1350).
+ * 한국 수출입 기업 기준 KRW. 바꾸려면 이 한 줄만 고치면 된다(대장의 base_currency와 일치해야 함).
+ */
+export const BASE_CURRENCY = "KRW";

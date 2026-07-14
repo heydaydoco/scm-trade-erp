@@ -35,6 +35,31 @@ export const CURRENCY_SYMBOL: Record<string, string> = {
   CNY: "¥",
 };
 
+/**
+ * 통화별 고시단위(quote unit) — 환율 대장 입력의 100단위 함정 방지 (P2.3, F5).
+ * 한국 은행은 JPY를 100엔당 원화로 고시한다(예: 100 JPY = 905 KRW). 사용자는 은행 화면값
+ * 그대로 입력하고, 서비스가 이 단위로 나눠 1단위 정규화값(9.05)을 대장에 저장한다.
+ * 여기 없는 통화는 1단위 고시(quoteUnitOf 기본 1).
+ */
+export const CURRENCY_QUOTE_UNIT: Record<string, number> = {
+  JPY: 100,
+};
+
+/** 통화의 고시단위 (미정의는 1). 환율 입력 폼·서비스가 공유하는 단일 출처. */
+export function quoteUnitOf(currency: string | null | undefined): number {
+  if (!currency) return 1;
+  return CURRENCY_QUOTE_UNIT[currency] ?? 1;
+}
+
+/** 환율 출처 추천값 (자유 입력 허용 — datalist 힌트용). */
+export const FX_SOURCE_SUGGESTIONS: string[] = [
+  "한국은행",
+  "하나은행 고시",
+  "우리은행 고시",
+  "네이버 환율",
+  "수동입력",
+];
+
 export const INCOTERMS: Code[] = [
   { code: "EXW", label: "EXW" },
   { code: "FCA", label: "FCA" },
@@ -142,4 +167,12 @@ export function labelOf(codes: Code[], code: string | null | undefined): string 
  */
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * 환율 6자리 반올림 — 1단위 정규화(예: 905/100=9.05, 소액통화 0.00074…)를 결정적으로 저장.
+ * 금액(round2)보다 정밀도가 필요해 별도 함수. 서비스가 대장 저장 시 사용.
+ */
+export function round6(n: number): number {
+  return Math.round((n + Number.EPSILON) * 1e6) / 1e6;
 }
