@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { saveSalesOrderAction, type SalesOrderFormState } from "./actions";
-import type { SalesOrder, SalesOrderInput } from "@/services/types";
+import type { LatestRate, SalesOrder, SalesOrderInput } from "@/services/types";
 import {
   CURRENCIES,
   CURRENCY_SYMBOL,
@@ -15,6 +15,8 @@ import {
   TRANSPORT,
   UNITS,
 } from "@/services/codes";
+import { BASE_CURRENCY } from "@/config/company";
+import { useFxPrefill } from "@/lib/useFxPrefill";
 import { Field, inputClass } from "@/components/Field";
 
 export interface PartnerOption {
@@ -60,18 +62,58 @@ function fmt(n: number): string {
   });
 }
 
+/** 환율 프리필 출처 힌트 — 대장 최신값·수동입력·미등록을 안내(투명성). */
+function FxHint({
+  currency,
+  latest,
+  source,
+}: {
+  currency: string;
+  latest: LatestRate | null;
+  source: string;
+}) {
+  if (currency === BASE_CURRENCY) {
+    return (
+      <p className="mt-1 text-[11px] text-zinc-400">기준통화 — 환율은 항상 1입니다.</p>
+    );
+  }
+  if (source === "수동입력") {
+    return <p className="mt-1 text-[11px] text-amber-600">✎ 수동 입력됨 (대장값 아님)</p>;
+  }
+  if (latest) {
+    return (
+      <p className="mt-1 text-[11px] text-blue-600">
+        대장 최신: 1 {currency} = {latest.rate} {BASE_CURRENCY}
+        {latest.source ? ` · ${latest.source}` : ""}
+        {latest.rateDate ? ` · ${latest.rateDate} 고시` : ""}
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1 text-[11px] text-zinc-400">
+      대장에 {currency} 환율이 없습니다 — 직접 입력하거나{" "}
+      <Link href="/fx-rates/new" className="text-blue-600 hover:underline">
+        환율 대장에 등록
+      </Link>
+      하세요.
+    </p>
+  );
+}
+
 export function SalesOrderForm({
   salesOrder,
   draft,
   partners,
   items,
   defaultDate,
+  rates,
 }: {
   salesOrder?: SalesOrder;
   draft?: SalesOrderInput;
   partners: PartnerOption[];
   items: ItemOption[];
   defaultDate: string;
+  rates: Record<string, LatestRate>;
 }) {
   const [state, formAction, pending] = useActionState<
     SalesOrderFormState,
@@ -117,13 +159,31 @@ export function SalesOrderForm({
   const [openKey, setOpenKey] = useState<string | null>(null);
 
   // 통화·할인은 실시간 합계 표시를 위해 controlled
-  const [currency, setCurrency] = useState(
-    v?.currency ?? salesOrder?.currency ?? draft?.currency ?? "USD",
-  );
+  const initialCurrency =
+    v?.currency ?? salesOrder?.currency ?? draft?.currency ?? "USD";
+  const [currency, setCurrency] = useState(initialCurrency);
   const [discount, setDiscount] = useState(
     v?.discount ??
       (salesOrder ? String(salesOrder.discount) : draft ? String(draft.discount) : "0"),
   );
+
+  // 환율 프리필(원칙 1-B) — 통화 선택 시 대장 최신값 자동 채움, 수동 수정 가능.
+  // 빈 신규 문서일 때만 마운트 프리필(기존 문서·견적드래프트·에러재시드는 스냅샷 존중).
+  const fx = useFxPrefill({
+    rates,
+    initialCurrency,
+    initialRate:
+      v?.exchangeRate ??
+      (salesOrder?.exchangeRate != null
+        ? String(salesOrder.exchangeRate)
+        : draft?.exchangeRate != null
+          ? String(draft.exchangeRate)
+          : "1"),
+    initialSource: v?.fxSource ?? salesOrder?.fxSource ?? "",
+    initialQuotedAt: v?.fxQuotedAt ?? salesOrder?.fxQuotedAt ?? "",
+    autoPrefill: !salesOrder && !draft && !v,
+  });
+  const latest = fx.latestFor(currency);
 
   function patchLine(key: string, patch: Partial<LineRow>) {
     setLines((prev) =>
@@ -191,6 +251,9 @@ export function SalesOrderForm({
         }
       />
       <input type="hidden" name="lines" value={linesPayload} />
+      {/* 환율 출처 스냅샷 — 프리필/수동 여부를 문서에 고정(원칙 1-B). save_sales_order가 저장. */}
+      <input type="hidden" name="fxSource" value={fx.source} />
+      <input type="hidden" name="fxQuotedAt" value={fx.quotedAt} />
 
       {state.error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -276,7 +339,10 @@ export function SalesOrderForm({
             name="currency"
             className={inputClass}
             value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            onChange={(e) => {
+              setCurrency(e.target.value);
+              fx.onCurrencyChange(e.target.value); // 대장 최신 환율 자동 채움
+            }}
           >
             {CURRENCIES.map((c) => (
               <option key={c.code} value={c.code}>
@@ -285,22 +351,17 @@ export function SalesOrderForm({
             ))}
           </select>
         </Field>
-        <Field label="환율 (기준통화 환산, 기본 1)">
+        <Field label={`환율 (1 ${currency} → ${BASE_CURRENCY} 환산)`}>
           <input
             name="exchangeRate"
             type="number"
             step="0.0001"
             min="0"
             className={inputClass}
-            defaultValue={
-              v?.exchangeRate ??
-              (salesOrder?.exchangeRate != null
-                ? String(salesOrder.exchangeRate)
-                : draft?.exchangeRate != null
-                  ? String(draft.exchangeRate)
-                  : "1")
-            }
+            value={fx.rate}
+            onChange={(e) => fx.onRateEdit(e.target.value)}
           />
+          <FxHint currency={currency} latest={latest} source={fx.source} />
         </Field>
 
         <SectionTitle>거래 조건</SectionTitle>

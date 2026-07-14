@@ -2,6 +2,7 @@ import { listPartners } from "@/services/partners";
 import { listItems } from "@/services/items";
 import { getQuotation } from "@/services/quotations";
 import { buildSalesOrderDraftFromQuotation } from "@/services/salesOrders";
+import { getLatestRates } from "@/services/fxRates";
 import type { SalesOrderInput } from "@/services/types";
 import {
   SalesOrderForm,
@@ -18,7 +19,11 @@ export default async function NewSalesOrderPage({
   searchParams: Promise<{ from?: string }>;
 }) {
   const { from } = await searchParams;
-  const [partners, items] = await Promise.all([listPartners(), listItems()]);
+  const [partners, items, rates] = await Promise.all([
+    listPartners(),
+    listItems(),
+    getLatestRates(),
+  ]);
 
   // 원칙 3 — 견적에서 참조 생성: ?from={quotationId} 면 견적 데이터로 초안 시드
   let draft: SalesOrderInput | undefined;
@@ -54,6 +59,7 @@ export default async function NewSalesOrderPage({
         partners={partnerOptions}
         items={itemOptions}
         defaultDate={today}
+        rates={rates}
       />
     </div>
   );

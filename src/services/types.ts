@@ -267,6 +267,8 @@ export interface SalesOrder {
   requestedDeliveryDate: string | null;
   currency: string | null;
   exchangeRate: number | null;
+  fxSource: string | null; // 환율 출처 스냅샷 (대장 프리필/수동). 확정시점 고정(원칙 1-B)
+  fxQuotedAt: string | null; // 환율 고시시점 스냅샷 (ISO)
   incoterms: string | null;
   paymentTerms: string | null;
   destinationCountry: string | null;
@@ -302,6 +304,8 @@ export interface SalesOrderInput {
   requestedDeliveryDate: string | null;
   currency: string | null;
   exchangeRate: number | null;
+  fxSource: string | null; // 환율 출처 스냅샷 (대장 프리필 시 출처, 수동 시 '수동입력')
+  fxQuotedAt: string | null; // 환율 고시시점 스냅샷 (ISO). 없으면 null
   incoterms: string | null;
   paymentTerms: string | null;
   destinationCountry: string | null;

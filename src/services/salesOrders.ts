@@ -19,6 +19,8 @@ interface SalesOrderRow {
   requested_delivery_date: string | null;
   currency: string | null;
   exchange_rate: number | string | null;
+  fx_source: string | null;
+  fx_quoted_at: string | null;
   incoterms: string | null;
   payment_terms: string | null;
   destination_country: string | null;
@@ -51,7 +53,7 @@ interface SalesOrderLineRow {
 
 // partner_id → companies FK 로 거래처명을 임베드(견적과 동일 패턴).
 const SO_COLUMNS =
-  "id, so_number, ref_quotation_id, partner_id, order_date, requested_delivery_date, currency, exchange_rate, incoterms, payment_terms, destination_country, destination_port, destination_airport, transport, subtotal, discount, total_amount, status, notes, terms_conditions, companies(company_name, country)";
+  "id, so_number, ref_quotation_id, partner_id, order_date, requested_delivery_date, currency, exchange_rate, fx_source, fx_quoted_at, incoterms, payment_terms, destination_country, destination_port, destination_airport, transport, subtotal, discount, total_amount, status, notes, terms_conditions, companies(company_name, country)";
 
 const LINE_COLUMNS =
   "id, so_id, product_id, product_name, hs_code, description, quantity, unit, unit_price, amount, ref_quotation_line_id, sort_order";
@@ -128,6 +130,8 @@ function assembleSalesOrder(
     requestedDeliveryDate: row.requested_delivery_date,
     currency: row.currency,
     exchangeRate: row.exchange_rate == null ? null : Number(row.exchange_rate),
+    fxSource: row.fx_source,
+    fxQuotedAt: row.fx_quoted_at,
     incoterms: row.incoterms,
     paymentTerms: row.payment_terms,
     destinationCountry: row.destination_country,
@@ -156,8 +160,8 @@ function headerPayload(
     requested_delivery_date: input.requestedDeliveryDate,
     currency: input.currency,
     exchange_rate: input.exchangeRate ?? 1,
-    fx_source: null, // P2.3 환율대장에서 채움
-    fx_quoted_at: null,
+    fx_source: input.fxSource, // 환율대장 프리필/수동 출처 스냅샷 (원칙 1-B)
+    fx_quoted_at: input.fxQuotedAt, // 고시시점 스냅샷 (없으면 null)
     incoterms: input.incoterms,
     payment_terms: input.paymentTerms,
     destination_country: input.destinationCountry,
@@ -202,7 +206,9 @@ export function buildSalesOrderDraftFromQuotation(q: Quotation): SalesOrderInput
     orderDate: null, // 폼에서 오늘로 기본
     requestedDeliveryDate: null,
     currency: q.currency,
-    exchangeRate: q.exchangeRate ?? 1,
+    exchangeRate: q.exchangeRate ?? 1, // 견적 환율 스냅샷 승계(원칙 1-B)
+    fxSource: null, // 견적은 출처를 기록하지 않음 → 폼에서 통화 변경 시 대장 프리필로 채워짐
+    fxQuotedAt: null,
     incoterms: q.incoterms,
     paymentTerms: q.paymentTerms,
     destinationCountry: q.destinationCountry,

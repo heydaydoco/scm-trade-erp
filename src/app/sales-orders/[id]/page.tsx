@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getSalesOrder } from "@/services/salesOrders";
 import { listPartners } from "@/services/partners";
 import { listItems } from "@/services/items";
+import { getLatestRates } from "@/services/fxRates";
 import {
   SalesOrderForm,
   type ItemOption,
@@ -18,10 +19,11 @@ export default async function EditSalesOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [salesOrder, partners, items] = await Promise.all([
+  const [salesOrder, partners, items, rates] = await Promise.all([
     getSalesOrder(id),
     listPartners(),
     listItems(),
+    getLatestRates(),
   ]);
   if (!salesOrder) notFound();
 
@@ -67,6 +69,7 @@ export default async function EditSalesOrderPage({
         partners={partnerOptions}
         items={itemOptions}
         defaultDate={today}
+        rates={rates}
       />
     </div>
   );
