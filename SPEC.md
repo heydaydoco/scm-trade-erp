@@ -221,7 +221,7 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - F2. L/C 하자(Discrepancy) 체크리스트 (UCP600) `[P6]`
 - F3. 결제조건 구조화 (기산점 + 일수 → 만기 자동계산) `[P6]`
 - F4. T/T·D/P·D/A·O/A 결제 추적, 송금(SWIFT) `[P8]`
-- F5. 환율 기록 대장 (확정 시점 고정, 출처·고시시점 명시) `[P2]`
+- F5. 환율 기록 대장 (확정 시점 고정, 출처·고시시점 명시) ✅ *구현(P2.3 — fx_rates 추가전용 대장·1단위 정규화(JPY 100단위 함정 처리)·통화별 최신 뷰·견적/수주 프리필)* `[P2]`
 - F6. 환리스크/환차손익, 수출보험(K-SURE) `[P9]`
 - F7. 수입원가(Landed Cost) 계산 + 제품 원가(Costing) — 관세·운임·부대비용 포함 실원가 `[P8]`
 
@@ -389,6 +389,7 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 - **P2 — 수주 + 환율 + 감사로그**: SO(참조생성), 주문확인서, 환율 대장, audit_log 기반 깔기
   - ✅ **P2.1 감사 추적 기반 완료** (2026-07-13) — 다중에이전트 설계로 P2를 ①감사기반 → ②수주(SO) → ③환율대장 순서 확정. 감사를 먼저 깐 이유: 가장 작고 순수추가·완전가역이라 오너 마이그레이션 절차를 안전하게 리허설하고, SO가 생기기 전에 I5 "처음부터"·원칙 5 공백 제거, **제네릭 트리거라 P2.2에서 SO는 트리거 2줄로 태생부터 감사**됨. 구현: 추가-전용 `audit_log` + 범용 트리거 `fn_audit`(SECURITY DEFINER, `to_jsonb(old/new)` 전후 스냅샷)를 `quotations` 헤더에 부착 — **라인테이블(quotation_items)은 미부착**(save_quotation의 라인 전량 DELETE+재INSERT로 인한 감사 폭주·시각적 '삭제' 모순 방지). 앱은 SELECT만(위조·삭제 불가, 원칙 5), 기록은 DB 트리거 전용. 읽기전용 `/audit` 화면(before→after 변경키 요약) + 사이드바 '관리' 그룹. (마이그레이션: `db/migrations/p2.1_audit_log.sql`, 오너 실행 완료) **다음: P2.2 수주(SO)+주문확인서 → P2.3 환율 대장.**
   - ✅ **P2.2 수주(SO)+주문확인서 완료** (2026-07-13) — 견적 모듈 미러: `sales_orders`/`so_lines` 신규 헤더-라인, `save_sales_order` RPC(save_quotation 미러·원자적, 3-arg `next_doc_number('sales_order','SO',period)` 별도 카운터), `salesOrders.ts` 서비스, 등록/수정 폼·목록·상세·**주문확인서(Order Confirmation) 인쇄**. **견적→수주 참조 생성**(원칙 3, `/sales-orders/new?from=`, 라인별 `ref_quotation_line_id` 스냅샷 포인터=FK아님). `partner_id`(SPEC 표준)→companies FK 임베드. 잔량/출고수량 컬럼 없음(원칙 1). exchange_rate 확정시점 스냅샷(원칙 1-B); `fx_source`/`fx_quoted_at`는 P2.3용 미리 심음. **P2.1 범용 감사 트리거를 2줄로 상속**(수주도 태생부터 감사). 다중에이전트 정합성 리뷰로 참조생성 시 환율 스냅샷 손실 버그 1건 교정. (마이그레이션: `db/migrations/p2.2_sales_orders.sql` + PostgREST 스키마 캐시 `notify pgrst`, 오너 실행 완료) **다음: P2.3 환율 대장(fx_rates) → P2 완료.**
+  - ✅ **P2.3 환율 대장(fx_rates) 완료 = P2 전체 완료** (2026-07-14, 라이브 검증됨) — `fx_rates` **추가-전용 대장**(SELECT+INSERT만, UPDATE/DELETE 미부여로 불변 강제; 정정=새 행). 기준통화 `BASE_CURRENCY='KRW'`(원칙 1-B). **rate는 항상 1단위 정규화 저장**, `quote_unit`(JPY=100)로 **100단위 고시 함정** 처리(은행 화면값 그대로 입력→서비스 `normalizeRate` 한 곳에서 ÷단위→9.05; 프리필·문서·합계는 1단위만 써 100배 오류 원천 차단). **통화별 최신 뷰 `fx_rates_latest`**(DISTINCT ON, rate_date desc·created_at desc=정정이 이김)로 전역 limit 윈도우·정렬 함정 제거. 견적·수주 폼 **공용 프리필 훅 `useFxPrefill`**: 통화 선택 시 대장 최신 자동채움·수동수정 가능·**문서는 대장을 FK로 물지 않고 값만 스냅샷**(대장이 바뀌어도 과거 문서 환율 불변, 원칙 1-B). 수주는 `fx_source`/`fx_quoted_at`까지 저장(save_sales_order가 P2.2부터 지원), **견적은 rate만**(save_quotation 잠금·미개정). 다중에이전트 정합성 리뷰(돈·불변성·프리필 적대검증)로 실결함 3건 교정(통화변경 시 이전통화 환율/출처 승계·최신조회 윈도우·고시시점 타임존). (마이그레이션: `db/migrations/p2.3_fx_rates.sql` + `notify pgrst`, 오너 실행·검증 완료) **P2 완료 → 다음: P3(구매 PO·선적부킹·기일 역산 알림).**
 - **P3 — 구매 + 선적부킹 + 기일엔진**: PO, 선적부킹/마일스톤, 기일 역산 알림
 - **P4 — 재고 원장 + 출고/입고 + 서류생성 + 문서흐름**: 재고 코어, Delivery/GR(참조생성), CI/PL 생성기, 흐름 추적 화면 ← **여기까지가 진짜 ERP의 1차 완성**
   - ⚠️ 재고 원장 테이블은 **이 단계부터 로트/시리얼/위치 칸을 포함**해 만든다. (P5에서 컬럼을 추가하면 P4에 쌓인 과거 기록은 영원히 비어 소급 불가)
@@ -415,4 +416,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v1.6 · P0·P1 완료(2026-06-30) + P2 진행 중 — P2.1 감사 추적 기반 + P2.2 수주(SO)·주문확인서 완료(2026-07-13). 다음: P2.3 환율 대장 → P2 완료 → P3(구매 PO·선적·기일엔진)*
+*문서 버전: v1.7 · P0·P1 완료(2026-06-30) + **P2 전체 완료**(2026-07-14) — P2.1 감사 추적 기반 + P2.2 수주(SO)·주문확인서 + P2.3 환율 대장(fx_rates). 다음: P3(구매 PO·선적부킹·기일 역산 알림)*
