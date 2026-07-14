@@ -116,6 +116,41 @@ export const QUOTATION_STATUS: Code[] = [
   { code: "expired", label: "만료" },
 ];
 
+/** 선적 상태 (P3.2 — 실제 shipments.status 값). */
+export const SHIPMENT_STATUS: Code[] = [
+  { code: "draft", label: "작성중" },
+  { code: "booked", label: "부킹확정" },
+  { code: "shipped", label: "선적완료" },
+  { code: "arrived", label: "도착" },
+  { code: "cancelled", label: "취소" },
+];
+
+/** 선적 방향 (P3.2 — 라벨·필터·진입기본값용. 주문 연결을 제한하지 않음). */
+export const SHIPMENT_DIRECTION: Code[] = [
+  { code: "export", label: "수출 (Export)" },
+  { code: "import", label: "수입 (Import)" },
+];
+
+/** 마일스톤 유형 (P3.2, 원칙 4 코드테이블) — 기일엔진(P3.3) 원천. 해상·항공·수출입 공용. */
+export const MILESTONE_TYPES: Code[] = [
+  { code: "doc_cutoff", label: "서류마감 (S/I Cut-off)" },
+  { code: "cargo_closing", label: "카고클로징 (CY Cut-off)" },
+  { code: "vgm_cutoff", label: "VGM 마감" },
+  { code: "etd", label: "출항 (ETD)" },
+  { code: "eta", label: "입항 (ETA)" },
+  { code: "arrival_notice", label: "도착통보" },
+  { code: "cargo_release", label: "화물 반출" },
+];
+
+/**
+ * 기본 마일스톤 템플릿 — 폼 "기본 마일스톤 채우기" 버튼(transport별 표준 세트, 빈 날짜 행으로 추가).
+ * 마일스톤이 안 쌓이면 P3.3 기일엔진이 알릴 대상이 없으므로 입력 마찰을 줄인다.
+ */
+export const MILESTONE_TEMPLATES: Record<string, string[]> = {
+  sea: ["doc_cutoff", "cargo_closing", "vgm_cutoff", "etd", "eta"],
+  air: ["doc_cutoff", "etd", "eta"],
+};
+
 /** 감사 동작 — audit_log.action 값 → 한글 라벨 (P2.1, 원칙 4). */
 export const AUDIT_ACTION: Code[] = [
   { code: "INSERT", label: "등록" },

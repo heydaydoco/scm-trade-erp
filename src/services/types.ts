@@ -454,3 +454,68 @@ export interface PurchaseOrderInput {
   termsConditions: string | null;
   lines: PurchaseOrderLineInput[];
 }
+
+/**
+ * 도메인 타입 — 선적(Shipment) (SPEC E1·E3·E4, §5 무역 · 원칙 3 참조 · 원칙 6 발번).
+ *
+ * 물리 테이블 shipments(헤더) + shipment_orders(주문 M:N) + milestones(일정).
+ *  - 범위(P3.2): 부킹 + 주문 연결 + 마일스톤. 품목·금액·서류·S/I는 P4.
+ *  - direction은 라벨·필터·기본값일 뿐, 주문 연결을 제한하지 않는다(SO+PO 혼합 = 3자무역/직송).
+ *  - orders: 선적에 걸린 주문들(SO/PO). 분할선적·합짐을 M:N으로 처리(수량 배분은 P4).
+ *  - milestones: 예정/실적 일정 — planned_date가 P3.3 기일엔진(D-7/D-3/D-1) 원천.
+ */
+export interface ShipmentOrderLink {
+  orderType: string; // 'SO' | 'PO'
+  orderId: string | null;
+  orderNumber: string | null; // 표시용 스냅샷
+}
+
+export interface Milestone {
+  type: string; // MILESTONE_TYPES 코드
+  plannedDate: string | null; // YYYY-MM-DD (예정)
+  actualDate: string | null; // YYYY-MM-DD (실적)
+  memo: string | null;
+}
+
+export interface Shipment {
+  id: string;
+  shipNumber: string;
+  direction: string | null; // export/import (라벨)
+  partnerId: string | null; // 혼합 선적이면 null
+  partnerName: string | null; // 조인 표시용
+  partnerCountry: string | null;
+  forwarder: string | null;
+  carrier: string | null;
+  transport: string | null; // sea/air
+  vesselVoyage: string | null;
+  pol: string | null; // 적출항
+  pod: string | null; // 도착항
+  bookingNo: string | null; // 포워더 부킹번호
+  blNo: string | null; // B/L 번호
+  containerNo: string | null;
+  incoterms: string | null;
+  status: string; // draft/booked/shipped/arrived/cancelled
+  notes: string | null;
+  orders: ShipmentOrderLink[];
+  milestones: Milestone[];
+}
+
+/** 선적 등록/수정 입력 (번호·조인필드 제외 — 서비스가 채움). 주문연결·마일스톤은 read와 동일 모양. */
+export interface ShipmentInput {
+  direction: string | null;
+  partnerId: string | null;
+  forwarder: string | null;
+  carrier: string | null;
+  transport: string | null;
+  vesselVoyage: string | null;
+  pol: string | null;
+  pod: string | null;
+  bookingNo: string | null;
+  blNo: string | null;
+  containerNo: string | null;
+  incoterms: string | null;
+  status: string;
+  notes: string | null;
+  orders: ShipmentOrderLink[];
+  milestones: Milestone[];
+}
