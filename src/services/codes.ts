@@ -131,6 +131,21 @@ export const SO_STATUS: Code[] = [
   { code: "cancelled", label: "취소" },
 ];
 
+/** 발주 상태 (P3.1 — 실제 purchase_orders.status 값). */
+export const PO_STATUS: Code[] = [
+  { code: "draft", label: "작성중" },
+  { code: "sent", label: "발주송부" },
+  { code: "confirmed", label: "공급사확정" },
+  { code: "completed", label: "완료" },
+  { code: "cancelled", label: "취소" },
+];
+
+/** 새 발주 기본 약관 (Purchase Order Terms). 서비스·폼이 공유(클라이언트 안전). */
+export const DEFAULT_PO_TERMS =
+  "Please confirm acceptance of this purchase order in writing.\n" +
+  "Delivery to be completed by the requested date; notify immediately of any delay.\n" +
+  "Goods must match the specifications, quantity and price stated herein.";
+
 /** 새 수주 기본 약관 (Order Confirmation Terms). 서비스·폼이 공유(클라이언트 안전). */
 export const DEFAULT_SO_TERMS =
   "This order confirmation is subject to the agreed quotation terms.\n" +

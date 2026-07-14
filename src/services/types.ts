@@ -366,3 +366,91 @@ export interface LatestRate {
   quotedAt: string | null;
   rateDate: string | null;
 }
+
+/**
+ * 도메인 타입 — 발주(Purchase Order) (SPEC C3·C4, 원칙 2 헤더-라인 · 원칙 3 참조생성).
+ *
+ * 물리 테이블 purchase_orders(헤더) + po_lines(라인) 이식. 수주(SalesOrder) 미러.
+ *  - 원칙 2: subtotal=Σ(line.amount), total=subtotal−discount 는 서비스가 항상 재계산.
+ *  - 원칙 3: refSalesOrderId/라인별 refSoLineId = 수주에서 참조 생성(back-to-back, 스냅샷 포인터).
+ *  - 원칙 6: poNumber는 DB 원자적 발번(next_doc_number 'purchase_order')으로만 채번.
+ *  - 원칙 1-B: 발주당 단일 통화 + exchangeRate(발주 시점 고정, 매출 환율 미승계).
+ *  - 원칙 1: 입고수량/잔량은 컬럼으로 저장하지 않는다 — GR(P4)에서 Σ로 파생.
+ *  - 거래처(partnerId)는 공급사(companies.company_type = supplier/both/미분류).
+ */
+export interface PurchaseOrderLine {
+  id: string;
+  lineNo: number; // sort_order + 1 (표시용 1-based)
+  productId: string | null; // 품목 소프트 링크
+  productName: string; // 자유텍스트 스냅샷
+  hsCode: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unitPrice: number;
+  amount: number; // = quantity × unitPrice (파생 — 서비스가 계산)
+  refSoLineId: string | null; // 참조 출처 수주 라인(FK 아닌 스냅샷 포인터)
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  refSalesOrderId: string | null; // 참조 생성 출처(수주)
+  partnerId: string | null; // 공급사
+  partnerName: string | null; // 조인 표시용
+  partnerCountry: string | null;
+  orderDate: string | null;
+  requestedDeliveryDate: string | null;
+  currency: string | null;
+  exchangeRate: number | null;
+  fxSource: string | null; // 환율 출처 스냅샷(대장 프리필/수동). 확정시점 고정(원칙 1-B)
+  fxQuotedAt: string | null; // 환율 고시시점 스냅샷 (ISO)
+  incoterms: string | null;
+  paymentTerms: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  transport: string | null;
+  discount: number; // 헤더 레벨 할인
+  subtotal: number; // = Σ(line.amount) (파생)
+  total: number; // = subtotal − discount (파생)
+  status: string; // draft/sent/confirmed/completed/cancelled
+  notes: string | null;
+  termsConditions: string | null;
+  lines: PurchaseOrderLine[];
+}
+
+/** 발주 라인 입력 (id·amount 제외 — amount는 서비스가 계산). */
+export interface PurchaseOrderLineInput {
+  productId: string | null;
+  productName: string;
+  hsCode: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unitPrice: number;
+  refSoLineId: string | null; // 참조 출처 수주 라인(있으면 유지)
+}
+
+/** 발주 등록/수정 입력 (번호·합계·조인필드 제외 — 서비스가 채움). */
+export interface PurchaseOrderInput {
+  refSalesOrderId: string | null;
+  partnerId: string | null;
+  orderDate: string | null;
+  requestedDeliveryDate: string | null;
+  currency: string | null;
+  exchangeRate: number | null;
+  fxSource: string | null; // 환율 출처 스냅샷 (대장 프리필 시 출처, 수동 시 '수동입력')
+  fxQuotedAt: string | null; // 환율 고시시점 스냅샷 (ISO). 없으면 null
+  incoterms: string | null;
+  paymentTerms: string | null;
+  destinationCountry: string | null;
+  destinationPort: string | null;
+  destinationAirport: string | null;
+  transport: string | null;
+  discount: number;
+  status: string;
+  notes: string | null;
+  termsConditions: string | null;
+  lines: PurchaseOrderLineInput[];
+}
