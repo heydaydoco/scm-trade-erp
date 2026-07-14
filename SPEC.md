@@ -203,10 +203,10 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - D9. 안전재고/EOQ/ABC 분석 `[P9]`
 
 ### E. 무역 실행 (Trade Execution)
-- E1. 선적 부킹 (포워더, 선사/항공사, 선명/편명, ETD/ETA, 컨테이너) `[P3]`
-- E2. Shipping Instruction (S/I) 작성·전달 `[P3]`
-- E3. 선적 마일스톤 (서류마감/Cargo Closing/ETD/ETA/VGM) + **기일 역산 알림** `[P3]`
-- E4. 분할선적 차수 관리 (1 SO → N 선적) `[P4]`
+- E1. 선적 부킹 (포워더, 선사/항공사, 선명/편명, ETD/ETA, 컨테이너) ✅ *구현(P3.2 — shipments 부킹헤더·부킹번호/BL/컨테이너 분리·주문 M:N)* `[P3]`
+- E2. Shipping Instruction (S/I) 작성·전달 — shipment_parties 도입 후(P4) `[P3]`
+- E3. 선적 마일스톤 (서류마감/Cargo Closing/ETD/ETA/VGM) + **기일 역산 알림** ✅ *마일스톤 구현(P3.2 — 유형별 예정/실적 + 기본템플릿); 역산 알림은 P3.3* `[P3]`
+- E4. 분할선적 차수 관리 (1 SO → N 선적) — 주문↔선적 연결(M:N)은 *P3.2 구현*, 수량 배분 추적은 P4 `[P4]`
 - E5. 컨테이너 적입(CBM/적입계획), 쉬핑마크, VGM `[P5]`
 - E6. 수출 통관 (수출신고, 신고수리, 적재의무기한=수리일+30일) `[P5]`
 - E7. 무역서류 생성기 (CI / PL / B/L draft / C/O) — 한 데이터원에서 생성, 교차검증 `[P4]`
@@ -392,6 +392,7 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   - ✅ **P2.3 환율 대장(fx_rates) 완료 = P2 전체 완료** (2026-07-14, 라이브 검증됨) — `fx_rates` **추가-전용 대장**(SELECT+INSERT만, UPDATE/DELETE 미부여로 불변 강제; 정정=새 행). 기준통화 `BASE_CURRENCY='KRW'`(원칙 1-B). **rate는 항상 1단위 정규화 저장**, `quote_unit`(JPY=100)로 **100단위 고시 함정** 처리(은행 화면값 그대로 입력→서비스 `normalizeRate` 한 곳에서 ÷단위→9.05; 프리필·문서·합계는 1단위만 써 100배 오류 원천 차단). **통화별 최신 뷰 `fx_rates_latest`**(DISTINCT ON, rate_date desc·created_at desc=정정이 이김)로 전역 limit 윈도우·정렬 함정 제거. 견적·수주 폼 **공용 프리필 훅 `useFxPrefill`**: 통화 선택 시 대장 최신 자동채움·수동수정 가능·**문서는 대장을 FK로 물지 않고 값만 스냅샷**(대장이 바뀌어도 과거 문서 환율 불변, 원칙 1-B). 수주는 `fx_source`/`fx_quoted_at`까지 저장(save_sales_order가 P2.2부터 지원), **견적은 rate만**(save_quotation 잠금·미개정). 다중에이전트 정합성 리뷰(돈·불변성·프리필 적대검증)로 실결함 3건 교정(통화변경 시 이전통화 환율/출처 승계·최신조회 윈도우·고시시점 타임존). (마이그레이션: `db/migrations/p2.3_fx_rates.sql` + `notify pgrst`, 오너 실행·검증 완료) **P2 완료 → 다음: P3(구매 PO·선적부킹·기일 역산 알림).**
 - **P3 — 구매 + 선적부킹 + 기일엔진**: PO, 선적부킹/마일스톤, 기일 역산 알림
   - ✅ **P3.1 발주(PO) 완료** (2026-07-14, 라이브 검증됨) — 수주(P2.2) 모듈 미러: `purchase_orders`/`po_lines` 신규 헤더-라인, `save_purchase_order` RPC(save_sales_order 미러·원자, 공유 `next_doc_number('purchase_order','PO',period)` 별도 카운터), `purchaseOrders.ts` 서비스, 등록/수정 폼·목록·상세·**발주서(Purchase Order) 인쇄**(From Buyer=자사/To Supplier). **2경로 생성**: ① 단독 ② **수주 참조생성(back-to-back)**(원칙 3, `/purchase-orders/new?from=`, 헤더 `ref_sales_order_id` + 라인별 `ref_so_line_id` 스냅샷 포인터=FK아님, 라인 단위라 한 수주→여러 공급사 분할발주 가능). 승계 규칙: 거래처 비움(공급사=`company_type` supplier/both/미분류, 순수 고객 제외)·환율 미승계(발주 시점 대장 프리필, P2.3 `useFxPrefill` 재사용·`fx_source`/`fx_quoted_at` 스냅샷)·매입단가 0 초기화·인코텀즈/결제조건 비움(매입≠매출)·통화/운송/목적지 승계. 입고/잔량 컬럼 없음(원칙 1, GR는 P4). P2.1 감사 트리거 상속. 다중에이전트 정합성 리뷰(돈·원자성·참조생성·불변성) 통과(확인 버그 0). (마이그레이션: `db/migrations/p3.1_purchase_orders.sql` + `notify pgrst`, 오너 실행·검증 완료) **다음: P3.2 선적부킹·마일스톤 → P3.3 기일 역산 알림.**
+  - ✅ **P3.2 선적 부킹·마일스톤 완료** (2026-07-14, 라이브 검증됨) — `shipments`/`shipment_orders`(M:N)/`milestones` 신규 + `save_shipment` RPC(save_sales_order 미러·원자: 번호+헤더+주문연결+마일스톤). **범위=부킹+일정만**(shipment_lines·parties·금액·무역서류·S/I·인쇄는 P4; **분할선적은 주문↔선적 연결 수준이고 수량 배분 추적은 P4**). direction(export/import)은 **라벨·필터·기본값일 뿐 주문 연결을 제한하지 않음** → 한 선적에 SO+PO 혼합(3자무역·직송), `partner_id` nullable. `shipment_orders`는 `order_id` 소프트포인터(SO/PO) + `unique(shipment_id,order_type,order_id)` **중복차단 3중**(폼 picker 제외 + 액션 dedup + RPC payload검사/unique) — 단, 같은 주문이 서로 다른 선적에 걸리는 **분할선적은 허용**. `booking_no`/`bl_no`/`container_no` 별도. 마일스톤=기일엔진(P3.3) 원천(유형 코드테이블 + **transport별 기본 템플릿 버튼**). 수주·발주에서 참조 부킹(`?fromSo=`/`?fromPo=`). P2.1 감사 상속. 다중에이전트 리뷰로 transport null 왕복 버그 1건 교정(P3.2f). (마이그레이션: `db/migrations/p3.2_shipments.sql` — 레거시 빈 shipments 자동 이전 포함 + `notify pgrst`, 오너 실행·검증 완료) **다음: P3.3 기일 역산 알림.**
 - **P4 — 재고 원장 + 출고/입고 + 서류생성 + 문서흐름**: 재고 코어, Delivery/GR(참조생성), CI/PL 생성기, 흐름 추적 화면 ← **여기까지가 진짜 ERP의 1차 완성**
   - ⚠️ 재고 원장 테이블은 **이 단계부터 로트/시리얼/위치 칸을 포함**해 만든다. (P5에서 컬럼을 추가하면 P4에 쌓인 과거 기록은 영원히 비어 소급 불가)
 - **P5 — 통관 + 로트/시리얼 + 검수 + BOM**: 수출입 통관, 추적성, QC, BOM
@@ -417,4 +418,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v1.8 · P0·P1·P2 완료 + **P3 진행 중** — P3.1 발주(PO) 완료(2026-07-14, back-to-back 참조생성·환율 프리필·발주서 인쇄). 다음: P3.2 선적부킹·마일스톤 → P3.3 기일 역산 알림*
+*문서 버전: v1.9 · P0·P1·P2 완료 + **P3 진행 중** — P3.1 발주(PO) + P3.2 선적부킹·마일스톤 완료(2026-07-14, 주문 M:N·3자무역 혼합·분할선적·마일스톤 템플릿). 다음: P3.3 기일 역산 알림(마일스톤 예정일 소스 D-7/D-3/D-1)*
