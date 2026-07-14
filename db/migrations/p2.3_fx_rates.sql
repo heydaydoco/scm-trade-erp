@@ -18,7 +18,9 @@
 --     rate는 정규화값(905/100 = 9.05, 1엔당)으로 저장한다. 정규화는 입력 폼/서비스 한 곳에서만
 --     수행(원칙 7) → 프리필·문서·합계 등 모든 소비자는 1단위 rate만 쓰므로 절대 100배 오류 없음.
 --     원본 고시값 = rate × quote_unit 으로 언제든 재현(감사·표시용).
---   · 최신 환율 = quote_currency별 rate_date desc, quoted_at desc, created_at desc 첫 행.
+--   · 최신 환율 = (base,quote)별 rate_date desc, created_at desc 첫 행(뷰 fx_rates_latest).
+--     '정정=새 행'(원칙 5)이므로 나중에 넣은 행(created_at 큼)이 이긴다. quoted_at은 표시·감사용
+--     메타데이터라 '최신' 정렬 키가 아니다(정정 시 비워도 최신이 밀리지 않게).
 --   · 문서(견적/수주)는 이 대장을 FK로 참조하지 않는다 — 폼이 값을 "복사(스냅샷)"만 한다.
 --     → 대장에 새 환율이 쌓여도 과거 문서의 exchange_rate는 영원히 불변(원칙 1-B).
 --   · 단일 행 저장이라 SECURITY DEFINER RPC 불필요 — 앱이 직접 INSERT(원자성 이슈 없음).
@@ -44,11 +46,21 @@ create index if not exists fx_rates_lookup_idx
   on public.fx_rates (base_currency, quote_currency, rate_date desc, created_at desc);
 -- ※ (base, quote, rate_date) 유니크 제약은 두지 않는다 — 같은 날 정정도 새 행으로 허용(원칙 5).
 
--- 2) 권한: SELECT + INSERT 만. UPDATE/DELETE 미부여 → 앱이 대장을 수정·삭제할 수 없다(원칙 5).
---    (인증 도입 전 현 단계는 anon 사용 — 쓰기경로 세분권한은 P8 RBAC에서 강화)
-grant select, insert on public.fx_rates to anon, authenticated;
+-- 2) 통화별 최신 환율 뷰 (프리필용) — 전역 limit 윈도우·정렬 함정 없이 DB에서 직접 1행씩.
+--    '최신' = 같은 (base,quote) 안에서 rate_date desc, created_at desc → 정정(나중 행)이 이긴다(원칙 5).
+--    앱은 이 뷰만 조회하므로 대장이 아무리 커져도 통화별 최신이 누락되지 않는다.
+create or replace view public.fx_rates_latest as
+  select distinct on (base_currency, quote_currency)
+    id, base_currency, quote_currency, rate, quote_unit, rate_date, source, quoted_at, note, created_at
+  from public.fx_rates
+  order by base_currency, quote_currency, rate_date desc, created_at desc;
 
--- 3) PostgREST 스키마 캐시 새로고침 — 새 테이블을 REST API가 즉시 인식하게 한다.
+-- 3) 권한: 대장은 SELECT + INSERT 만. UPDATE/DELETE 미부여 → 앱이 대장을 수정·삭제할 수 없다(원칙 5).
+--    (인증 도입 전 현 단계는 anon 사용 — 쓰기경로 세분권한은 P8 RBAC에서 강화). 뷰는 SELECT.
+grant select, insert on public.fx_rates        to anon, authenticated;
+grant select        on public.fx_rates_latest  to anon, authenticated;
+
+-- 4) PostgREST 스키마 캐시 새로고침 — 새 테이블·뷰를 REST API가 즉시 인식하게 한다.
 --    (없으면 "Could not find the table 'public.fx_rates' in the schema cache" 발생)
 notify pgrst, 'reload schema';
 
@@ -60,4 +72,5 @@ notify pgrst, 'reload schema';
 --     from public.fx_rates order by created_at desc limit 5;
 
 -- ── 되돌리기(rollback) ───────────────────────────────────────────────────────
+--   drop view  if exists public.fx_rates_latest;
 --   drop table if exists public.fx_rates;

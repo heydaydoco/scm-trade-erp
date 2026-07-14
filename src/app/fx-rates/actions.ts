@@ -31,6 +31,16 @@ function collectValues(formData: FormData): Record<string, string> {
   return values;
 }
 
+/**
+ * datetime-local(타임존 없음, 예 '2026-07-14T09:30')을 KST(+09:00) 순간으로 명시.
+ * 안 하면 timestamptz가 서버 TimeZone(UTC)로 해석해 9시간 밀린다. 한국(KST)은 DST 없어 항상 +09:00.
+ */
+function toKstIso(local: string): string {
+  const m = local.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(:\d{2})?$/);
+  if (!m) return local; // 예상 외 형식은 그대로(방어)
+  return `${m[1]}${m[2] ?? ":00"}+09:00`;
+}
+
 function parseFxRateForm(formData: FormData): FxRateInput {
   const get = (k: string) => {
     const v = formData.get(k);
@@ -61,6 +71,8 @@ function parseFxRateForm(formData: FormData): FxRateInput {
     throw new Error("환율은 0보다 큰 숫자로 입력하세요.");
   }
 
+  const quotedAtRaw = get("quotedAt");
+
   return {
     baseCurrency: BASE_CURRENCY,
     quoteCurrency,
@@ -68,7 +80,7 @@ function parseFxRateForm(formData: FormData): FxRateInput {
     quoteUnit,
     rateDate,
     source: get("source"),
-    quotedAt: get("quotedAt"),
+    quotedAt: quotedAtRaw ? toKstIso(quotedAtRaw) : null,
     note: get("note"),
   };
 }

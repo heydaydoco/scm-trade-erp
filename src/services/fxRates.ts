@@ -74,7 +74,9 @@ export async function listFxRates(): Promise<FxRate[]> {
 }
 
 /**
- * 통화별 최신 환율 맵 (프리필용). 기준통화(base)에 대한 각 대상통화의 가장 최근 1행.
+ * 통화별 최신 환율 맵 (프리필용). 기준통화(base)에 대한 각 대상통화의 최신 1행.
+ * DB 뷰 fx_rates_latest(=DISTINCT ON, 통화별 rate_date desc·created_at desc 1행)를 조회한다 —
+ * 전역 limit 윈도우에 의존하지 않아 대장이 커져도 통화별 최신이 누락되지 않고, 정정(나중 행)이 이긴다.
  * rate는 1단위 정규화값이라 문서 exchangeRate에 그대로 넣으면 된다.
  * 반환: { USD: {rate,quoteUnit,source,quotedAt,rateDate}, ... } (기준통화 자신은 제외 — 항상 1).
  */
@@ -83,18 +85,14 @@ export async function getLatestRates(
 ): Promise<Record<string, LatestRate>> {
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
-    .from("fx_rates")
+    .from("fx_rates_latest")
     .select(FX_COLUMNS)
-    .eq("base_currency", base)
-    .order("rate_date", { ascending: false, nullsFirst: false })
-    .order("quoted_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(500);
+    .eq("base_currency", base);
 
   if (error) throw new Error(`최신 환율 조회 실패: ${error.message}`);
   const rows = (data ?? []) as unknown as FxRateRow[];
 
-  // 정렬 순서상 각 통화의 첫 등장이 최신 → 통화별 첫 행만 채택.
+  // 뷰가 (base,quote)별 1행을 보장 → base 필터 후 통화별 1행. 방어적으로 첫 등장만 채택.
   const latest: Record<string, LatestRate> = {};
   for (const row of rows) {
     const q = row.quote_currency;

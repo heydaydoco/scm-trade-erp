@@ -61,10 +61,17 @@ export function useFxPrefill(init: FxPrefillInit): FxPrefillState {
   function onCurrencyChange(currency: string) {
     const c = computeFor(init.rates, currency);
     if (c) {
-      // 대장에 환율이 있으면 프리필. 없으면 현재 값을 유지(사용자가 직접 입력).
+      // 대장에 환율이 있으면(또는 기준통화면) 프리필.
       setRate(c.rate);
       setSource(c.source);
       setQuotedAt(c.quotedAt);
+    } else {
+      // 대장에 없는 비-기준 통화 → 이전 통화의 rate/출처를 절대 승계하지 않는다(원칙 1-B).
+      // 안 그러면 예: USD(1350) 프리필 상태에서 EUR로 바꾸면 1350·USD출처가 그대로 남아
+      // EUR 문서에 잘못된 환율+거짓 출처가 조용히 스냅샷된다. 비우고 직접 입력을 유도(FxHint).
+      setRate("");
+      setSource("");
+      setQuotedAt("");
     }
   }
 
