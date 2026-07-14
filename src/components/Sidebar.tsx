@@ -33,7 +33,10 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
   },
   {
     section: "관리",
-    items: [{ href: "/audit", label: "변경 이력" }],
+    items: [
+      { href: "/deadlines", label: "임박 기일" },
+      { href: "/audit", label: "변경 이력" },
+    ],
   },
 ];
 
