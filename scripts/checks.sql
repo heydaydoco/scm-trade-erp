@@ -11,6 +11,34 @@
 --  "DB에 실제로 쌓인 데이터가 원칙을 지키고 있는가"는 DB에서만 확인된다.
 -- ============================================================================
 
+-- ============================================================================
+--  ⑦ 품목·창고·단위별 원장 합 = 현재고 (눈으로 보는 검산)
+-- ============================================================================
+--  ⚠️ 이 블록만 보려면 여기부터 세미콜론까지 드래그해서 Run 하세요.
+--     (전체 Run 하면 Supabase 는 마지막 문장인 ①~⑧ 판정표만 보여줍니다)
+--
+--  마이너스는 "틀림"이 아니다 — 원칙 8(차단이 아니라 경고 후 허용).
+--  다만 전기 누락 신호이므로 눈으로 본다.
+--  같은 품목·창고에 단위가 여러 줄로 쪼개져 보이면 = 원장 단위 혼재(⑧에서 판정).
+select
+  v.item_code      as 품목코드,
+  v.item_name      as 품목명,
+  v.warehouse_code as 창고,
+  v.uom            as 단위,
+  v.on_hand        as 현재고,
+  (select count(*) from public.stock_movements m
+    where m.item_id = v.item_id
+      and m.warehouse_code = v.warehouse_code
+      and m.uom = v.uom)                        as 원장행수,
+  case when v.on_hand < 0 then '⚠️ 마이너스(전기 누락 의심)' else '' end as 비고
+from public.stock_on_hand v
+order by (v.on_hand < 0) desc, v.item_code nulls last, v.warehouse_code, v.uom;
+
+
+-- ============================================================================
+--  ①~⑧ 합격 판정  (이 파일을 통째로 Run 하면 아래 결과가 나옵니다)
+-- ============================================================================
+
 -- ── ① 유형과 qty 부호가 어긋난 행 ───────────────────────────────────────────
 --  규칙: INIT·ADJ_IN·GR_IN 은 +, ADJ_OUT·DLV_OUT 은 −.
 --        REVERSAL 은 원행의 반대이므로 ± 둘 다 정상 → 검사에서 제외.
@@ -162,20 +190,6 @@ from (
   having count(distinct uom) > 1
 ) d;
 
-
--- ============================================================================
---  ⑦ 품목·창고별 원장 합 = 현재고 (눈으로 보는 검산)
--- ============================================================================
---  뷰(stock_on_hand)와 원장 직접 합산이 일치하는지 + 마이너스 재고 표시.
---  마이너스는 "틀림"이 아니다 — 원칙 8(경고 후 허용). 다만 전기 누락 신호이므로 본다.
-select
-  v.item_code                                   as 품목코드,
-  v.item_name                                   as 품목명,
-  v.warehouse_code                              as 창고,
-  v.on_hand                                     as 현재고,
-  v.uom                                         as 단위,
-  (select count(*) from public.stock_movements m
-    where m.item_id = v.item_id and m.warehouse_code = v.warehouse_code) as 원장행수,
-  case when v.on_hand < 0 then '⚠️ 마이너스(전기 누락 의심)' else '' end as 비고
-from public.stock_on_hand v
-order by (v.on_hand < 0) desc, v.item_code nulls last, v.warehouse_code;
+-- ⬆ 이 판정표가 **파일의 마지막 결과**다 (Supabase SQL Editor 는 여러 문장을 실행해도
+--   마지막 SELECT 의 결과만 Results 에 보여준다 → 합격 판정이 가려지지 않게 맨 뒤에 둔다).
+--   품목별 눈검산(⑦)은 파일 앞부분에 있고, 보려면 그 블록만 드래그해서 Run 한다.
