@@ -1,6 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { todayKst, periodOfYmd } from "@/lib/date";
-import { round6 } from "./docFlow";
 import type { Delivery, DeliveryLine, SoOpenQty } from "./types";
 
 /**
@@ -25,67 +24,10 @@ export {
 export type { DocQtyLike as DeliveryQtyLike } from "./docFlow";
 
 /* ---------- ★ P4.3 고유 순수 로직: 마이너스 재고 예상 (원칙 8 경고의 근거) ---------- */
-
-/** 출고 폼 한 줄의 수량 정보. */
-export interface OutLineQty {
-  itemId: string;
-  itemName: string;
-  qty: number;
-  uom: string;
-}
-
-/** 품목별 예상재고. onHand 는 출고 창고 기준 현재고. */
-export interface StockProjection {
-  itemId: string;
-  itemName: string;
-  uom: string;
-  onHand: number;
-  outQty: number; // 이번 출고 합계(같은 품목 여러 라인을 합친 값)
-  projected: number; // 음수 = 마이너스 재고 (차단 아님, 경고 대상)
-}
-
-/**
- * 저장 전 품목별 예상재고 — **같은 품목이 여러 수주 라인에 걸린 경우를 합산한다.**
- *
- * ★ 이게 이 단계의 함정: 라인별로 재고를 보면 각각은 통과하는데(6≤10, 5≤10)
- *   합치면 11 > 10 이라 −1 이 된다. 라인 단위로 경고하면 이 케이스를 놓친다.
- *
- * 수량 0/빈 줄은 "이번에 안 내보내는 품목"이라 집계에서 뺀다.
- */
-export function projectStockByItem(
-  lines: OutLineQty[],
-  onHandByItem: Record<string, number>,
-): StockProjection[] {
-  const agg = new Map<string, StockProjection>();
-
-  for (const l of lines) {
-    if (!Number.isFinite(l.qty) || l.qty <= 0) continue;
-    const cur = agg.get(l.itemId);
-    if (cur) {
-      cur.outQty = round6(cur.outQty + l.qty);
-      cur.projected = round6(cur.onHand - cur.outQty);
-    } else {
-      const onHand = onHandByItem[l.itemId] ?? 0;
-      agg.set(l.itemId, {
-        itemId: l.itemId,
-        itemName: l.itemName,
-        uom: l.uom,
-        onHand,
-        outQty: round6(l.qty),
-        projected: round6(onHand - l.qty),
-      });
-    }
-  }
-  return Array.from(agg.values());
-}
-
-/** 마이너스가 되는 품목만 — 원칙 8: 차단하지 않고 확인만 받는다. */
-export function shortagesOf(
-  lines: OutLineQty[],
-  onHandByItem: Record<string, number>,
-): StockProjection[] {
-  return projectStockByItem(lines, onHandByItem).filter((p) => p.projected < 0);
-}
+/*  실체는 stockProjection.ts — 출고 폼(브라우저)이 직접 부르려면 이 파일(서버 I/O 포함)을
+    import 할 수 없어 순수 부분만 떼어 뒀다. 서버 쪽 호출부는 계속 여기서 가져다 쓴다. */
+export { projectStockByItem, shortagesOf } from "./stockProjection";
+export type { OutLineQty, StockProjection } from "./stockProjection";
 
 /* ---------- 물리 행 모양 ---------- */
 
