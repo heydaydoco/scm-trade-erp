@@ -23,8 +23,12 @@ export {
   consumedQtyOf as receivedQtyOf,
   isOverConsume as isOverReceipt,
   nextStatusFrom as poStatusFrom,
+  resolveUom,
+  resolveUomOrThrow,
+  resolveDocLineUom,
 } from "./docFlow";
 export type { DocQtyLike as ReceiptQtyLike } from "./docFlow";
+import { resolveDocLineUoms } from "./uomResolution";
 
 /* ---------- 물리 행 모양 ---------- */
 
@@ -47,7 +51,7 @@ interface GrLineRow {
   item_id: string;
   item_name: string | null;
   qty: number | string;
-  uom: string | null;
+  uom: string; // DB not null — 저장 시 해석 실패는 거부되므로 여기 폴백이 없다(P4.3f)
   lot_no: string | null;
   memo: string | null;
 }
@@ -96,7 +100,7 @@ function mapGrLine(row: GrLineRow): GrLine {
     itemId: row.item_id,
     itemName: row.item_name,
     qty: num(row.qty),
-    uom: row.uom ?? "PCS",
+    uom: row.uom,
     lotNo: row.lot_no,
     memo: row.memo,
   };
@@ -253,7 +257,6 @@ export interface ReceiptLineInput {
   itemId: string;
   itemName: string | null;
   qty: number;
-  uom: string | null;
   lotNo: string | null;
   memo: string | null;
 }
@@ -261,6 +264,13 @@ export interface ReceiptLineInput {
 /**
  * 입고 저장 — 헤더 + 라인 + 원장 전기(GR_IN)가 **한 트랜잭션**(RPC).
  * 중간에 실패하면 전부 롤백된다: 원장만 남거나 입고만 남는 상태가 존재할 수 없다.
+ *
+ * ★ P4.3f 단위 해석 — 폴백 체인: **발주 라인 uom → products.unit → 저장 거부**.
+ *   화면이 보낸 단위를 쓰지 않는다 — RPC 가 품목을 발주 라인에서 가져오듯(P4.2f),
+ *   단위도 DB 의 발주 라인·품목 마스터에서 가져온다(화면 값은 표시·경고용일 뿐).
+ *   'PCS' 하드코딩 폴백은 없다: 단위 불명 수량이 원장에 들어가는 것 자체가 결함.
+ *   여기서 항상 해석 완료된 단위를 보내므로 RPC 의 "클라이언트 uom → products.unit
+ *   → 'PCS'" 폴백은 앱 경로에서 죽은 코드가 된다(RPC 무수정 — 라이브 잠금 원칙).
  */
 export async function saveGoodsReceipt(input: {
   poId: string;
@@ -275,14 +285,24 @@ export async function saveGoodsReceipt(input: {
 
   const date = input.receiptDate ?? todayKst();
   const supabase = createSupabaseServerClient();
+  const uoms = await resolveDocLineUoms({
+    lineTable: "po_lines",
+    docColumn: "po_id",
+    docId: input.poId,
+    lineRefs: input.lines.map((l) => ({
+      lineId: l.poLineId,
+      itemName: l.itemName,
+    })),
+    docLabel: "발주",
+  });
   const { data, error } = await supabase.rpc("save_goods_receipt", {
     p_po_id: input.poId,
-    p_lines: input.lines.map((l) => ({
+    p_lines: input.lines.map((l, i) => ({
       poLineId: l.poLineId,
       itemId: l.itemId,
       itemName: l.itemName,
       qty: Math.abs(l.qty), // 원장 부호는 유형(GR_IN)이 정한다
-      uom: l.uom,
+      uom: uoms[i], // 해석 완료된 단위(라인→마스터) — null·'PCS' 발명 불가
       lotNo: l.lotNo,
       memo: l.memo,
     })),

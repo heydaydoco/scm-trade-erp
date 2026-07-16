@@ -5,6 +5,9 @@ import {
   isOverReceipt,
   prefillQty,
   poStatusFrom,
+  resolveUom,
+  resolveUomOrThrow,
+  resolveDocLineUom,
   type ReceiptQtyLike,
 } from "./receipts";
 
@@ -138,5 +141,130 @@ describe("poStatusFrom — 발주 상태 자동전환 (RPC 미러)", () => {
 
   it("발주수량 0인 발주에 입고가 있으면 completed", () => {
     expect(poStatusFrom(0, 5, "confirmed")).toBe("completed");
+  });
+});
+
+/* ---------- ★ P4.3f: 단위 폴백 체인 = 라인 uom → 품목 마스터 unit ---------- */
+/*  'PCS' 하드코딩 폴백 금지 — 단위 불명 수량이 원장에 들어가는 것 자체가 결함이다.
+    (원칙 8의 경고-허용 대상이 아니라 정합성 문제 → 둘 다 없으면 저장 거부) */
+
+describe("resolveUom — 라인 uom → products.unit, 'PCS' 발명 금지", () => {
+  it("①라인에 단위가 있으면 라인 값 (마스터와 달라도 라인이 이긴다 — 전표 스냅샷)", () => {
+    expect(resolveUom("BOX", "EA")).toBe("BOX");
+    expect(resolveUom("EA", null)).toBe("EA");
+  });
+
+  it("②라인이 비면 품목 마스터 unit 으로 (기존의 'PCS' 오염이 이 케이스)", () => {
+    expect(resolveUom(null, "KG")).toBe("KG");
+    expect(resolveUom("", "SET")).toBe("SET");
+    expect(resolveUom("   ", "MT")).toBe("MT"); // 공백만 = 비어 있음 (RPC btrim 미러)
+  });
+
+  it("③둘 다 없으면 null — 'PCS' 를 지어내지 않는다", () => {
+    expect(resolveUom(null, null)).toBeNull();
+    expect(resolveUom("", "")).toBeNull();
+    expect(resolveUom(undefined, undefined)).toBeNull();
+    expect(resolveUom(null, "  ")).toBeNull();
+  });
+
+  it("앞뒤 공백은 정리해 돌려준다 (RPC btrim 과 같은 값이 원장에 가야 한다)", () => {
+    expect(resolveUom(" EA ", null)).toBe("EA");
+    expect(resolveUom(null, " KG ")).toBe("KG");
+  });
+});
+
+describe("resolveUomOrThrow — ③둘 다 없으면 저장 거부 (한국어 안내)", () => {
+  it("해석되면 그 값을 돌려준다", () => {
+    expect(resolveUomOrThrow("EA", null, "볼트")).toBe("EA");
+    expect(resolveUomOrThrow(null, "KG", "볼트")).toBe("KG");
+  });
+
+  it("★둘 다 없으면 품목명을 담아 한국어로 거부한다", () => {
+    expect(() => resolveUomOrThrow(null, null, "미지품목")).toThrowError(
+      /단위/,
+    );
+    expect(() => resolveUomOrThrow(null, null, "미지품목")).toThrowError(
+      /미지품목/,
+    );
+  });
+
+  it("품목명이 없어도 죽지 않고 거부한다", () => {
+    expect(() => resolveUomOrThrow("", "", null)).toThrowError(/단위/);
+  });
+});
+
+describe("resolveDocLineUom — 퍼라인 판정: 거부는 'RPC 게이트를 통과할 라인'에만", () => {
+  const master = (entries: [string, string | null][]) => new Map(entries);
+
+  it("★전표 라인 행이 없으면(타 전표·유령 id) null — RPC '이 발주의 라인이 아닙니다'에 양보", () => {
+    expect(resolveDocLineUom(undefined, master([]), "볼트")).toBeNull();
+  });
+
+  it("품목 미연결(product_id null)이면 단위 오류를 지어내지 않는다 — RPC 거부에 양보", () => {
+    expect(
+      resolveDocLineUom(
+        { unit: null, productId: null, productName: "자유텍스트" },
+        master([]),
+        null,
+      ),
+    ).toBeNull();
+    // 라인에 단위가 있으면 그 값 그대로 (어차피 RPC 가 품목 미연결로 거부한다)
+    expect(
+      resolveDocLineUom(
+        { unit: "EA", productId: null, productName: "자유텍스트" },
+        master([]),
+        null,
+      ),
+    ).toBe("EA");
+  });
+
+  it("라인에 단위가 있으면 마스터를 보지 않고 라인 값", () => {
+    expect(
+      resolveDocLineUom(
+        { unit: "BOX", productId: "P1", productName: "볼트" },
+        master([["P1", "EA"]]),
+        null,
+      ),
+    ).toBe("BOX");
+  });
+
+  it("라인 비고 마스터 unit 있으면 마스터 값", () => {
+    expect(
+      resolveDocLineUom(
+        { unit: null, productId: "P1", productName: "볼트" },
+        master([["P1", "KG"]]),
+        null,
+      ),
+    ).toBe("KG");
+  });
+
+  it("★마스터 행 자체가 없으면(소프트링크 단절) null — RPC '품목을 찾을 수 없습니다'에 양보", () => {
+    expect(
+      resolveDocLineUom(
+        { unit: null, productId: "P-없음", productName: "볼트" },
+        master([]),
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it("★마스터 행은 있는데 unit 이 없으면 거부 — 메시지는 DB 스냅샷 이름 우선", () => {
+    expect(() =>
+      resolveDocLineUom(
+        { unit: null, productId: "P1", productName: "정품명" },
+        master([["P1", null]]),
+        "조작된이름",
+      ),
+    ).toThrowError(/정품명/);
+  });
+
+  it("DB 이름이 없을 때만 클라이언트 이름을 쓴다", () => {
+    expect(() =>
+      resolveDocLineUom(
+        { unit: null, productId: "P1", productName: null },
+        master([["P1", "  "]]),
+        "클라이름",
+      ),
+    ).toThrowError(/클라이름/);
   });
 });

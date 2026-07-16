@@ -54,12 +54,12 @@ export async function saveReceiptAction(
       };
     }
 
+    // uom 은 보내지 않는다 — 서비스가 발주 라인→품목 마스터에서 해석한다(P4.3f).
     lines.push({
       poLineId: get(formData, `lines[${i}].poLineId`),
       itemId,
       itemName: get(formData, `lines[${i}].itemName`),
       qty,
-      uom: get(formData, `lines[${i}].uom`),
       lotNo: get(formData, `lines[${i}].lotNo`),
       memo: null,
     });

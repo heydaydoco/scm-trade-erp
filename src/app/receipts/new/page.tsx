@@ -6,6 +6,7 @@ import {
   prefillQty,
   countLiveReceiptsForPo,
 } from "@/services/receipts";
+import { resolveOpenLineUoms } from "@/services/items";
 import { listStockOnHand } from "@/services/stock";
 import { todayKst } from "@/lib/date";
 import { PageHeader } from "@/components/PageHeader";
@@ -58,11 +59,15 @@ export default async function NewReceiptPage({
     );
   }
 
-  const lines: ReceiptFormLine[] = openLines.map((l) => ({
+  // ★ P4.3f 단위 해석 — 라인 uom → 품목 마스터 unit ('PCS' 를 지어내지 않는다).
+  //   저장 시 서비스가 같은 체인으로 다시 해석하므로, 여기 값 == 원장에 박히는 값.
+  //   둘 다 없으면 null → 그 줄은 입고 불가로 잠근다(단위 불명 수량은 원장에 못 들어간다).
+  const uoms = await resolveOpenLineUoms(openLines);
+  const lines: ReceiptFormLine[] = openLines.map((l, i) => ({
     poLineId: l.poLineId,
     itemId: l.productId,
     itemName: l.productName ?? "(이름 없음)",
-    uom: l.unit ?? "PCS",
+    uom: uoms[i],
     orderedQty: l.orderedQty,
     receivedQty: l.receivedQty,
     openQty: l.openQty,

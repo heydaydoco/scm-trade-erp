@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { resolveUom } from "./docFlow";
 import type { Item, ItemInput } from "./types";
 
 /**
@@ -80,6 +81,56 @@ export async function listItems(): Promise<Item[]> {
   if (error) throw new Error(`품목 목록 조회 실패: ${error.message}`);
   const rows = (data ?? []) as unknown as ProductRow[];
   return rows.map(mapProductToItem);
+}
+
+/**
+ * 품목 id → 마스터 단위(unit) 맵 — P4.3f 단위 폴백 체인(라인 uom → 마스터 unit)의
+ * 표시층 조회용. 폼이 보여주는 단위와 서비스가 원장에 보내는 단위가 같은 규칙로
+ * 해석돼야 "폼 예측 == 원장 기록" 불변식이 유지된다(해석 자체는 docFlow.resolveUom).
+ */
+export async function listItemUnits(
+  ids: string[],
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  const unique = Array.from(new Set(ids)).filter((v) => v);
+  if (unique.length === 0) return map;
+
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, unit")
+    .in("id", unique);
+
+  if (error) throw new Error(`품목 단위 조회 실패: ${error.message}`);
+  for (const r of (data ?? []) as unknown as {
+    id: string;
+    unit: string | null;
+  }[]) {
+    map.set(r.id, r.unit);
+  }
+  return map;
+}
+
+/**
+ * 참조생성 폼(입고·출고)의 **표시용** 단위 해석 — 잔량 뷰 라인들을 받아
+ * 라인 uom → 마스터 unit 체인으로 푼다. null = 단위 불명 → 폼이 그 줄을 잠근다.
+ *
+ * ⚠️ 두 폼 페이지가 각자 들고 있으면 입고·출고가 서로 다른 줄을 잠그게 드리프트
+ *    한다 → 여기 한 벌만 둔다. 저장 경로(uomResolution.resolveDocLineUoms)와
+ *    같은 순수 규칙(docFlow.resolveUom)을 쓰므로 "폼이 보여주는 단위 == 원장에
+ *    박히는 단위" 불변식이 유지된다.
+ */
+export async function resolveOpenLineUoms(
+  lines: { unit: string | null; productId: string | null }[],
+): Promise<(string | null)[]> {
+  const masterUnits = await listItemUnits(
+    lines
+      .filter((l) => l.productId && resolveUom(l.unit, null) === null)
+      .map((l) => l.productId as string),
+  );
+  return lines.map((l) =>
+    resolveUom(l.unit, l.productId ? masterUnits.get(l.productId) : null),
+  );
 }
 
 /** 품목 1건 조회 (없으면 null). */

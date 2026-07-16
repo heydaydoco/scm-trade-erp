@@ -15,7 +15,7 @@ export interface DeliveryFormLine {
   soLineId: string;
   itemId: string | null; // null = 자유텍스트 품목 → 출고 불가
   itemName: string;
-  uom: string;
+  uom: string | null; // 해석된 단위(라인→마스터). null = 단위 불명 → 출고 불가(P4.3f)
   orderedQty: number;
   shippedQty: number;
   openQty: number;
@@ -85,7 +85,8 @@ export function DeliveryForm({
   const byUom = new Map<string, OutLineQty[]>();
   for (const l of lines) {
     const q = qtyOf(l.soLineId);
-    if (!l.itemId || !Number.isFinite(q) || q <= 0) continue;
+    // 단위 불명 라인(l.uom === null)은 저장 자체가 잠기므로 집계에서도 뺀다.
+    if (!l.itemId || !l.uom || !Number.isFinite(q) || q <= 0) continue;
     const group = byUom.get(l.uom) ?? [];
     group.push({ itemId: l.itemId, itemName: l.itemName, qty: q, uom: l.uom });
     byUom.set(l.uom, group);
@@ -199,24 +200,31 @@ export function DeliveryForm({
             {lines.map((l, i) => {
               const q = qtyOf(l.soLineId);
               const isOver = Number.isFinite(q) && q > 0 && q > l.openQty;
-              const blocked = l.itemId === null;
+              // 단위 불명(라인·마스터 모두 없음)도 잠근다 — 단위 없는 수량은 원장에 못 들어간다(P4.3f).
+              const noUom = l.itemId !== null && l.uom === null;
+              const blocked = l.itemId === null || noUom;
               // 이 줄의 품목이 마이너스가 되는가 — 합산 결과에서 찾는다(같은 품목 여러 줄).
-              const short = l.itemId
-                ? shortages.find((s) => s.itemId === l.itemId && s.uom === l.uom)
-                : undefined;
+              const short =
+                l.itemId && l.uom
+                  ? shortages.find((s) => s.itemId === l.itemId && s.uom === l.uom)
+                  : undefined;
               return (
                 <tr key={l.soLineId} className={blocked ? "bg-slate-50" : ""}>
                   <td className="px-3 py-2">
                     {l.itemName}
-                    {blocked && (
+                    {l.itemId === null && (
                       <div className="text-xs text-amber-700">
                         품목 마스터 미연결 — 출고 불가
+                      </div>
+                    )}
+                    {noUom && (
+                      <div className="text-xs text-amber-700">
+                        단위 없음 — 출고 불가 (품목 마스터에 단위를 입력하세요)
                       </div>
                     )}
                     <input type="hidden" name={`lines[${i}].soLineId`} value={l.soLineId} />
                     <input type="hidden" name={`lines[${i}].itemId`} value={l.itemId ?? ""} />
                     <input type="hidden" name={`lines[${i}].itemName`} value={l.itemName} />
-                    <input type="hidden" name={`lines[${i}].uom`} value={l.uom} />
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{l.orderedQty}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">

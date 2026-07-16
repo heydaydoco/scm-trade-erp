@@ -59,3 +59,79 @@ export function nextStatusFrom(
   if (consumedQty >= orderedQty) return "completed";
   return "partial";
 }
+
+/* ---------- ★ P4.3f: 단위(uom) 폴백 체인 — 입고·출고 공용 단일 진실 ---------- */
+
+/**
+ * 단위 해석: **선행전표 라인 uom → 품목 마스터 unit → null**.
+ *
+ * ⚠️ 'PCS' 를 지어내지 않는다 — 단위 불명 수량이 원장에 들어가는 것 자체가
+ *    결함이다(원칙 8의 경고-허용 대상이 아니라 정합성 문제). null 이면 호출부가
+ *    저장을 거부하거나(서비스: resolveUomOrThrow) 라인을 잠근다(폼).
+ *
+ * 공백 처리는 RPC 의 btrim 과 같은 규칙 — 화면·서비스·원장이 같은 값을 봐야
+ * "폼이 예측한 단위 == 원장에 박히는 단위" 불변식이 유지된다.
+ */
+export function resolveUom(
+  lineUom: string | null | undefined,
+  masterUnit: string | null | undefined,
+): string | null {
+  const line = lineUom?.trim();
+  if (line) return line;
+  const master = masterUnit?.trim();
+  if (master) return master;
+  return null;
+}
+
+/** resolveUom 의 저장 경로용 — 해석 실패는 저장 거부(한국어 안내, 품목명 포함). */
+export function resolveUomOrThrow(
+  lineUom: string | null | undefined,
+  masterUnit: string | null | undefined,
+  itemName: string | null | undefined,
+): string {
+  const uom = resolveUom(lineUom, masterUnit);
+  if (uom === null) {
+    throw new Error(
+      `단위를 알 수 없어 저장할 수 없습니다: ${itemName?.trim() || "(이름 없음)"} — ` +
+        `전표 라인과 품목 마스터 어디에도 단위가 없습니다. ` +
+        `품목 마스터에서 단위를 입력한 뒤 다시 시도하세요.`,
+    );
+  }
+  return uom;
+}
+
+/** 선행전표 라인 한 줄의 단위 판정에 필요한 정보(발주·수주 공용 모양). */
+export interface DocLineUnitInfo {
+  unit: string | null;
+  productId: string | null;
+  productName: string | null;
+}
+
+/**
+ * 저장 경로의 퍼라인 단위 판정 — **순수**(조회는 uomResolution.ts 가 한다).
+ *
+ * 거부(throw)는 "라인이 RPC 의 선행 게이트를 전부 통과할 것이 확실한데 단위만
+ * 없는" 경우로 한정한다. 그 외에는 null 을 돌려보내 **RPC 의 더 정확한 에러에
+ * 양보**한다 — RPC 는 uom 을 쓰기 전에 라인 참조·품목 연결을 먼저 검사한다:
+ *   행 없음(타 전표 라인·유령 id) → '이 발주/수주의 라인이 아닙니다'
+ *   품목 미연결(product_id null)  → '품목 마스터에 연결되지 않은 …'
+ *   마스터 행 자체가 없음(소프트링크 단절) → '품목을 찾을 수 없습니다'
+ *
+ * 품목명은 DB 스냅샷(row.productName)을 우선한다 — 클라이언트가 보낸 이름을
+ * 앞세우면 조작·개명된 이름으로 엉뚱한 품목을 고치라고 안내하게 된다(P4.2f 결).
+ */
+export function resolveDocLineUom(
+  row: DocLineUnitInfo | undefined,
+  masterUnits: ReadonlyMap<string, string | null>,
+  clientItemName: string | null,
+): string | null {
+  if (!row?.productId) return resolveUom(row?.unit, null);
+  const lineUnit = resolveUom(row.unit, null);
+  if (lineUnit) return lineUnit;
+  if (!masterUnits.has(row.productId)) return null;
+  return resolveUomOrThrow(
+    null,
+    masterUnits.get(row.productId),
+    row.productName ?? clientItemName,
+  );
+}

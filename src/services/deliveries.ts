@@ -20,8 +20,12 @@ export {
   consumedQtyOf as shippedQtyOf,
   isOverConsume as isOverDelivery,
   nextStatusFrom as soStatusFrom,
+  resolveUom,
+  resolveUomOrThrow,
+  resolveDocLineUom,
 } from "./docFlow";
 export type { DocQtyLike as DeliveryQtyLike } from "./docFlow";
+import { resolveDocLineUoms } from "./uomResolution";
 
 /* ---------- ★ P4.3 고유 순수 로직: 마이너스 재고 예상 (원칙 8 경고의 근거) ---------- */
 /*  실체는 stockProjection.ts — 출고 폼(브라우저)이 직접 부르려면 이 파일(서버 I/O 포함)을
@@ -51,7 +55,7 @@ interface DlvLineRow {
   item_id: string;
   item_name: string | null;
   qty: number | string;
-  uom: string | null;
+  uom: string; // DB not null — 저장 시 해석 실패는 거부되므로 여기 폴백이 없다(P4.3f)
   lot_no: string | null;
   memo: string | null;
 }
@@ -101,7 +105,7 @@ function mapLine(row: DlvLineRow): DeliveryLine {
     itemId: row.item_id,
     itemName: row.item_name,
     qty: num(row.qty),
-    uom: row.uom ?? "PCS",
+    uom: row.uom,
     lotNo: row.lot_no,
     memo: row.memo,
   };
@@ -248,7 +252,6 @@ export interface DeliveryLineInput {
   soLineId: string;
   itemName: string | null;
   qty: number;
-  uom: string | null;
   lotNo: string | null;
 }
 
@@ -257,6 +260,10 @@ export interface DeliveryLineInput {
  * 마이너스 재고가 되더라도 막지 않는다(원칙 8) — 경고는 폼이 저장 전에 띄운다.
  *
  * ⚠️ itemId 를 보내지 않는다 — RPC 가 수주 라인의 품목을 쓴다(클라이언트 값 불신).
+ *
+ * ★ P4.3f 단위 해석 — 폴백 체인: **수주 라인 uom → products.unit → 저장 거부**.
+ *   단위도 itemId 와 같은 결: 화면 값을 쓰지 않고 DB 라인→마스터에서 해석해 보낸다.
+ *   입고와 공용 오케스트레이션(uomResolution.ts) — 한쪽만 고치면 두 원장이 어긋난다.
  */
 export async function saveDelivery(input: {
   soId: string;
@@ -271,13 +278,23 @@ export async function saveDelivery(input: {
 
   const date = input.deliveryDate ?? todayKst();
   const supabase = createSupabaseServerClient();
+  const uoms = await resolveDocLineUoms({
+    lineTable: "so_lines",
+    docColumn: "so_id",
+    docId: input.soId,
+    lineRefs: input.lines.map((l) => ({
+      lineId: l.soLineId,
+      itemName: l.itemName,
+    })),
+    docLabel: "수주",
+  });
   const { data, error } = await supabase.rpc("save_delivery", {
     p_so_id: input.soId,
-    p_lines: input.lines.map((l) => ({
+    p_lines: input.lines.map((l, i) => ({
       soLineId: l.soLineId,
       itemName: l.itemName,
       qty: Math.abs(l.qty), // 원장 부호는 유형(DLV_OUT)이 정한다
-      uom: l.uom,
+      uom: uoms[i], // 해석 완료된 단위(라인→마스터) — null·'PCS' 발명 불가
       lotNo: l.lotNo,
     })),
     p_delivery_date: date,
