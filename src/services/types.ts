@@ -611,6 +611,53 @@ export interface GrLine {
   memo: string | null;
 }
 
+/* ---------- 출고 Delivery (P4.3 — SPEC B8) ---------- */
+
+/**
+ * 수주 라인의 잔량 — **저장된 컬럼이 아니라 계산**(뷰 so_open_qty, 원칙 1).
+ * SPEC의 심장: 잔량 = so_lines.qty − Σ(delivery_lines.qty).
+ */
+export interface SoOpenQty {
+  soLineId: string;
+  soId: string;
+  sortOrder: number | null;
+  productId: string | null; // null = 자유텍스트 품목 → 출고 불가
+  productName: string | null;
+  unit: string | null;
+  unitPrice: number; // 거래명세서 표시용(출고에는 저장하지 않는다)
+  orderedQty: number;
+  shippedQty: number;
+  openQty: number; // 음수 = 초과출고(차단 아님, 원칙 8)
+}
+
+export interface DeliveryLine {
+  id: string;
+  lineNo: number;
+  soLineId: string | null; // 소프트 포인터(FK 아님)
+  itemId: string;
+  itemName: string | null; // 스냅샷
+  qty: number; // 항상 양수 — 원장에서만 음수(DLV_OUT)
+  uom: string; // 스냅샷
+  lotNo: string | null; // 칸은 P4.3부터, 활성화는 P5
+  memo: string | null;
+}
+
+/** 출고 헤더. 부분출고 = 같은 수주에 여러 건. 취소는 상태 + 원장 역분개. */
+export interface Delivery {
+  id: string;
+  deliveryNo: string;
+  deliveryDate: string; // YYYY-MM-DD (KST)
+  status: string; // DELIVERY_STATUS: normal | cancelled
+  warehouseCode: string;
+  refDocType: string; // 'sales_order'
+  refDocId: string;
+  soNumber: string | null; // 표시용 조인
+  partnerName: string | null;
+  memo: string | null;
+  createdAt: string;
+  lines: DeliveryLine[];
+}
+
 /** 입고 헤더. 부분입고 = 같은 발주에 GR 여러 건. 취소는 상태 + 원장 역분개. */
 export interface GoodsReceipt {
   id: string;

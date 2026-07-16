@@ -13,62 +13,18 @@ import type { GoodsReceipt, GrLine, PoOpenQty } from "./types";
  *    여기서 status 를 직접 쓰지 않는다 — 사람 손이 닿으면 잔량과 상태가 어긋난다.
  */
 
-/* ---------- 순수 로직 (I/O 없음 → 단위 테스트 대상: receipts.test.ts) ---------- */
-
-/** 수량 합산용 최소 모양. cancelled 입고는 없던 일로 친다. */
-export interface ReceiptQtyLike {
-  qty: number;
-  cancelled: boolean;
-}
-
-/** 소수 수량의 부동소수 오차 정리(0.1+0.2=0.30000000000000004 함정). */
-function round6(n: number): number {
-  return Math.round(n * 1e6) / 1e6;
-}
-
-/** 살아있는(취소 아닌) 입고 수량의 합. */
-export function receivedQtyOf(lines: ReceiptQtyLike[]): number {
-  return round6(
-    lines.reduce((sum, l) => (l.cancelled ? sum : sum + l.qty), 0),
-  );
-}
-
-/**
- * 잔량 = 발주수량 − Σ(살아있는 입고) — **원칙 1의 심장**.
- * 음수면 초과입고다(차단하지 않는다).
- */
-export function openQtyOf(orderedQty: number, lines: ReceiptQtyLike[]): number {
-  return round6(orderedQty - receivedQtyOf(lines));
-}
-
-/**
- * 초과입고 경고 판정 — **차단이 아니라 경고**(원칙 8과 같은 결).
- * 실무에서 공급사가 조금 더 보내는 일이 있고, 막으면 입고 자체를 못 친다.
- */
-export function isOverReceipt(openQty: number, qty: number): boolean {
-  return qty > openQty;
-}
-
-/** 입고 폼 프리필 — 잔량을 그대로 채우되 음수(이미 초과입고)는 0으로. */
-export function prefillQty(openQty: number): number {
-  return openQty > 0 ? openQty : 0;
-}
-
-/**
- * 발주 상태 자동전환 규칙 — DB의 fn_po_apply_receipt_status 미러(표시·테스트용).
- * null 반환 = "상태를 건드리지 마라"(세대 도장이 없는 방어 케이스).
- *
- * ⚠️ 실제 전이는 RPC 가 한다. 이 함수는 화면 예측·테스트용이며 DB에 쓰지 않는다.
- */
-export function poStatusFrom(
-  orderedQty: number,
-  receivedQty: number,
-  statusBefore: string | null,
-): string | null {
-  if (receivedQty === 0) return statusBefore; // 도장 값으로 복귀 (없으면 null)
-  if (receivedQty >= orderedQty) return "completed";
-  return "partial";
-}
+/* ---------- 순수 로직 — 공용(docFlow)에 발주→입고 이름을 붙여 재수출 ---------- */
+/*  발주→입고와 수주→출고는 같은 규칙이다. 두 벌로 복붙하면 한쪽만 고쳐져 드리프트하므로
+    단일 진실은 docFlow.ts 에 두고 여기선 도메인 이름만 입힌다.
+    (단위 테스트는 receipts.test.ts 가 이 이름들로 계속 검증한다) */
+export {
+  openQtyOf,
+  prefillQty,
+  consumedQtyOf as receivedQtyOf,
+  isOverConsume as isOverReceipt,
+  nextStatusFrom as poStatusFrom,
+} from "./docFlow";
+export type { DocQtyLike as ReceiptQtyLike } from "./docFlow";
 
 /* ---------- 물리 행 모양 ---------- */
 

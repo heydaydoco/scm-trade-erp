@@ -158,11 +158,29 @@ export const AUDIT_ACTION: Code[] = [
   { code: "DELETE", label: "삭제" },
 ];
 
-/** 수주 상태 (P2.2 — 실제 sales_orders.status 값). */
-export const SO_STATUS: Code[] = [
+/**
+ * 수주 상태 — **표시용 전체 목록** (P2.2 + P4.3 `partial`).
+ * `sales_orders.status` 에 CHECK 제약이 없어(text default 'draft') 코드 추가가 자유롭다.
+ */
+export const SO_STATUS_ALL: Code[] = [
   { code: "draft", label: "작성중" },
   { code: "confirmed", label: "확정" },
+  { code: "partial", label: "부분출고" }, // ★ P4.3 — 기계 전용(아래 주석)
   { code: "completed", label: "완료" },
+  { code: "cancelled", label: "취소" },
+];
+
+/**
+ * 수주 폼에서 **사람이 고를 수 있는** 상태.
+ * ⚠️ `partial`(부분출고) 제외 — 출고 RPC 만 전이시키는 **기계 전용 상태**다.
+ *    손으로 넣으면 실제 출고 없이 부분출고가 되어 잔량과 상태가 어긋난다.
+ *    (`completed` 수동 선택은 P2.2 동작 그대로 유지)
+ */
+export const SO_STATUS: Code[] = SO_STATUS_ALL.filter((s) => s.code !== "partial");
+
+/** 출고 상태 (P4.3). 취소는 삭제가 아니라 상태 + 원장 역분개(원칙 1·5). */
+export const DELIVERY_STATUS: Code[] = [
+  { code: "normal", label: "정상" },
   { code: "cancelled", label: "취소" },
 ];
 

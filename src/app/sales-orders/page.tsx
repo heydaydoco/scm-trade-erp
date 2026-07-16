@@ -3,7 +3,9 @@ import { listSalesOrders } from "@/services/salesOrders";
 import type { SalesOrder } from "@/services/types";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge, type BadgeVariant } from "@/components/Badge";
-import { CURRENCY_SYMBOL, SO_STATUS, labelOf } from "@/services/codes";
+// 표시엔 SO_STATUS_ALL — 기계 전용 partial(부분출고)까지 라벨이 나와야 한다.
+// (폼 선택지는 SO_STATUS 로 partial 을 제외한다)
+import { CURRENCY_SYMBOL, SO_STATUS_ALL, labelOf } from "@/services/codes";
 
 // 항상 요청 시점에 최신 데이터를 읽는다.
 export const dynamic = "force-dynamic";
@@ -101,7 +103,7 @@ export default async function SalesOrdersPage() {
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={STATUS_VARIANT[so.status] ?? "zinc"}>
-                      {labelOf(SO_STATUS, so.status)}
+                      {labelOf(SO_STATUS_ALL, so.status)}
                     </Badge>
                   </td>
                   <td className="px-4 py-3 text-right">
