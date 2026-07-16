@@ -76,12 +76,18 @@ export function signedQty(movementType: string, qty: number): number {
  *  · 역분개 행은 다시 역분개하지 않는다 — 사슬이 생기면 무엇이 무엇을 상쇄했는지 못 읽는다.
  *    되돌린 걸 또 되돌리려면 조정을 새로 등록한다.
  *  · 이미 역분개된 행은 두 번 못 한다(DB의 UNIQUE 부분 인덱스가 최후 방어선).
+ *  · ★ 전표(입고 등)가 만든 행은 **원장에서 직접 되돌리지 않는다** — 전표에서 취소한다.
+ *    원장만 되돌리면 입고는 'normal' 로 남아 잔량·발주상태·잠금과 어긋나고, 그 뒤
+ *    [입고 취소]가 "이미 역분개된 행"으로 실패해 복구가 영원히 막힌다(P4.2f 교착).
+ *    판정 기준은 유형이 아니라 **전표에서 왔는가**(refDocType)다 — P4.3 출고도 같은 규칙.
  */
 export function isReversible(row: {
   movementType: string;
   reversedById: string | null;
+  refDocType: string | null;
 }): boolean {
   if (row.movementType === "REVERSAL") return false;
+  if (row.refDocType !== null) return false; // 전표 발생분 → 해당 전표에서 취소
   return row.reversedById === null;
 }
 

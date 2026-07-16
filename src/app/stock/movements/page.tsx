@@ -13,10 +13,21 @@ const TONE_CLASS: Record<string, string> = {
   reversal: "bg-slate-100 text-slate-600",
 };
 
-/** 참조 전표 라벨 — P4.2 GR / P4.3 Delivery가 ref_doc_type을 채운다. */
+/**
+ * 참조 전표 라벨 — 실제 저장값과 키를 일치시킨다.
+ * ⚠️ save_goods_receipt 는 ref_doc_type='goods_receipt'(snake_case)를 넣는다.
+ *    예전 키('GR'/'DLV')로는 못 찾아 한국어 화면에 영문 토큰이 그대로 노출됐다.
+ *    P4.3 출고는 'delivery' 로 통일한다.
+ */
 const REF_LABEL: Record<string, string> = {
-  GR: "입고",
-  DLV: "출고",
+  goods_receipt: "입고",
+  delivery: "출고",
+};
+
+/** 참조 전표로 가는 링크 — 전표 발생분은 그 전표에서 취소해야 하므로 갈 곳을 준다. */
+const REF_HREF: Record<string, string> = {
+  goods_receipt: "/receipts",
+  delivery: "/deliveries",
 };
 
 /**
@@ -62,6 +73,9 @@ export default async function StockMovementsPage({
         원장은 <b>추가만</b> 됩니다. 등록된 기록은 수정·삭제할 수 없고, 잘못 넣었으면{" "}
         <b>역분개</b>(반대부호 행 추가)로 되돌립니다. 원행과 역분개 행이 모두 남아
         무슨 일이 있었는지 그대로 보입니다.
+        <br />
+        <b>전표에서 온 기록</b>(입고 등)은 여기서 직접 되돌리지 않습니다 — 해당 전표를
+        취소하세요. 원장만 되돌리면 전표 상태·잔량과 어긋납니다.
       </p>
 
       {/* 필터 — GET 폼이라 URL이 곧 상태(공유·새로고침 안전). */}
@@ -191,11 +205,22 @@ export default async function StockMovementsPage({
                   </td>
                   <td className="px-4 py-3 text-slate-600">{r.warehouseCode}</td>
                   <td className="px-4 py-3 text-xs text-slate-500">
-                    {r.refDocType
-                      ? `${REF_LABEL[r.refDocType] ?? r.refDocType}`
-                      : r.reversalOfId
-                        ? "역분개"
-                        : "—"}
+                    {r.refDocType ? (
+                      REF_HREF[r.refDocType] && r.refDocId ? (
+                        <Link
+                          href={`${REF_HREF[r.refDocType]}/${r.refDocId}`}
+                          className="text-blue-700 hover:underline"
+                        >
+                          {REF_LABEL[r.refDocType] ?? r.refDocType} →
+                        </Link>
+                      ) : (
+                        (REF_LABEL[r.refDocType] ?? r.refDocType)
+                      )
+                    ) : r.reversalOfId ? (
+                      "역분개"
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600">
                     {r.memo ?? "—"}
@@ -206,11 +231,20 @@ export default async function StockMovementsPage({
                     ) : isReversible({
                         movementType: r.movementType,
                         reversedById: r.reversedById,
+                        refDocType: r.refDocType,
                       }) ? (
                       <ReverseButton
                         movementId={r.id}
                         summary={`${t.label} ${r.qty > 0 ? "+" : ""}${r.qty}`}
                       />
+                    ) : r.refDocType && REF_HREF[r.refDocType] && r.refDocId ? (
+                      // 전표 발생분 — 버튼만 없애면 사용자가 길을 잃는다. 갈 곳을 알려준다.
+                      <Link
+                        href={`${REF_HREF[r.refDocType]}/${r.refDocId}`}
+                        className="text-xs text-slate-500 underline"
+                      >
+                        {REF_LABEL[r.refDocType]}에서 취소 →
+                      </Link>
                     ) : (
                       <span className="text-xs text-slate-300">—</span>
                     )}

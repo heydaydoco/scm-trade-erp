@@ -72,25 +72,69 @@ describe("isInbound — 재고가 늘어나는 유형인가", () => {
 });
 
 describe("isReversible — 역분개 가능 판정", () => {
-  it("일반 행은 역분개 가능", () => {
-    expect(isReversible({ movementType: "ADJ_OUT", reversedById: null })).toBe(true);
+  it("수동 조정 행은 역분개 가능", () => {
+    expect(
+      isReversible({ movementType: "ADJ_OUT", reversedById: null, refDocType: null }),
+    ).toBe(true);
   });
 
   it("★역분개 행은 다시 역분개할 수 없다 (사슬 금지)", () => {
-    expect(isReversible({ movementType: "REVERSAL", reversedById: null })).toBe(false);
+    expect(
+      isReversible({ movementType: "REVERSAL", reversedById: null, refDocType: null }),
+    ).toBe(false);
   });
 
   it("★이미 역분개된 행은 두 번 못 한다", () => {
-    expect(isReversible({ movementType: "ADJ_IN", reversedById: "some-uuid" })).toBe(false);
+    expect(
+      isReversible({ movementType: "ADJ_IN", reversedById: "some-uuid", refDocType: null }),
+    ).toBe(false);
   });
 
   it("역분개 행이면서 이미 역분개된 경우도 당연히 불가", () => {
-    expect(isReversible({ movementType: "REVERSAL", reversedById: "x" })).toBe(false);
+    expect(
+      isReversible({ movementType: "REVERSAL", reversedById: "x", refDocType: null }),
+    ).toBe(false);
+  });
+
+  /**
+   * ★ P4.2f 교착 방지 — 전표(입고 등)가 만든 행은 원장에서 직접 되돌리면 안 된다.
+   * 원장만 되돌리면 입고는 'normal' 로 남아 잔량·발주상태·잠금과 어긋나고,
+   * 그 뒤 [입고 취소]가 "이미 역분개된 행"으로 실패해 복구가 영원히 막힌다.
+   */
+  it("★전표가 만든 행(GR_IN)은 원장에서 직접 역분개 불가 — 전표에서 취소해야 한다", () => {
+    expect(
+      isReversible({
+        movementType: "GR_IN",
+        reversedById: null,
+        refDocType: "goods_receipt",
+      }),
+    ).toBe(false);
+  });
+
+  it("★P4.3 출고(DLV_OUT)도 같은 규칙", () => {
+    expect(
+      isReversible({
+        movementType: "DLV_OUT",
+        reversedById: null,
+        refDocType: "delivery",
+      }),
+    ).toBe(false);
+  });
+
+  it("유형이 GR_IN 이라도 전표 참조가 없으면(수동 전기) 역분개 가능", () => {
+    // 판정 기준은 유형이 아니라 "전표에서 왔는가"다.
+    expect(
+      isReversible({ movementType: "GR_IN", reversedById: null, refDocType: null }),
+    ).toBe(true);
   });
 
   it("모든 유형에 대해 판정이 정의돼 있다", () => {
     for (const t of MOVEMENT_TYPES) {
-      const r = isReversible({ movementType: t.code, reversedById: null });
+      const r = isReversible({
+        movementType: t.code,
+        reversedById: null,
+        refDocType: null,
+      });
       expect(typeof r).toBe("boolean");
     }
   });
