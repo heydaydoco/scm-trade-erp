@@ -16,6 +16,8 @@ const ACTION_VARIANT: Record<string, BadgeVariant> = {
 
 /** 물리 테이블명 → 화면 라벨 (사람이 읽기 쉽게). 미정의는 원본 그대로. */
 const TABLE_LABEL: Record<string, string> = {
+  companies: "거래처",
+  products: "품목",
   quotations: "견적",
   quotation_items: "견적 품목",
   sales_orders: "수주",
