@@ -10,6 +10,7 @@ import {
   labelOf,
   round2,
 } from "@/services/codes";
+import { round6 } from "@/services/docFlow";
 import { SELLER } from "@/config/company";
 import { PrintButton } from "./PrintButton";
 
@@ -60,11 +61,23 @@ export default async function DeliveryPrintPage({
       amount: unitPrice !== undefined ? round2(l.qty * unitPrice) : null,
     };
   });
-  const totalQty = rows.reduce((s, r) => s + r.qty, 0);
-  const totalAmount = round2(
-    rows.reduce((s, r) => s + (r.amount ?? 0), 0),
-  );
+  // ★ 수량 총계는 **단위별로 쪼갠다**. `100 M + 50 EA = 150` 은 존재하지 않는 수량이고,
+  //   서명란이 달린 대외 서류에 검증 불가능한 숫자를 찍는 것이다. 수주 라인의 단위는
+  //   라인마다 자유롭게 고를 수 있으므로(SalesOrderForm) 한 출고에 단위가 섞이는 건 정상이다.
+  //   P4.1f가 원장에서 확립한 규칙 그대로: 단위가 섞이면 말없이 더하지 않고 행을 쪼갠다.
+  const qtyByUom = new Map<string, number>();
+  for (const r of rows) {
+    qtyByUom.set(r.uom, round6((qtyByUom.get(r.uom) ?? 0) + r.qty));
+  }
+  const totalQtyLabel = Array.from(qtyByUom.entries())
+    .map(([uom, q]) => `${q.toLocaleString()} ${uom}`)
+    .join(" · ");
+
+  const totalAmount = round2(rows.reduce((s, r) => s + (r.amount ?? 0), 0));
   const anyPrice = rows.some((r) => r.amount !== null);
+  // 헤더 할인은 주문 전체에 걸린 것이라 이번 부분출고에 얼마를 배분할지 정답이 없다.
+  // → 배분을 지어내지 않고 **할인이 있다는 사실을 명시**한다(청구서는 B9, 이 문서가 아니다).
+  const headerDiscount = salesOrder?.discount ?? 0;
 
   return (
     <div className="min-h-screen bg-zinc-100 py-8">
@@ -220,10 +233,10 @@ export default async function DeliveryPrintPage({
               <td className="py-2 pr-2" colSpan={3}>
                 TOTAL
               </td>
-              <td className="py-2 pr-2 text-right tabular-nums">
-                {totalQty.toLocaleString()}
+              {/* Qty+Unit 두 칸을 합쳐 단위별 총계를 쓴다 — 단위 없는 총수량은 찍지 않는다. */}
+              <td className="py-2 pr-2 text-right tabular-nums" colSpan={2}>
+                {totalQtyLabel || "-"}
               </td>
-              <td className="py-2 pr-2" />
               <td className="py-2 pr-2" />
               <td className="py-2 text-right tabular-nums">
                 {anyPrice ? `${money(totalAmount, cur)} ${cur ?? ""}` : "-"}
@@ -235,8 +248,18 @@ export default async function DeliveryPrintPage({
         <p className="mt-3 text-[11px] text-zinc-400">
           Unit price and amount are shown for reference only, quoted from Sales Order{" "}
           {delivery.soNumber ?? "-"}. This delivery note certifies quantities shipped.
+          Quantities of different units are totalled separately, never added together.
           {/* 단가·금액은 수주 라인 참조(표시 전용) — 출고 문서에 저장하지 않는다. */}
         </p>
+        {headerDiscount > 0 ? (
+          // 할인이 있는데 라인 합계만 크게 찍으면 청구액으로 읽힌다 — 명시적으로 부인한다.
+          <p className="mt-1 text-[11px] font-medium text-red-600">
+            * Sales Order {delivery.soNumber ?? "-"} carries a header discount of{" "}
+            {money(headerDiscount, cur)} which is <strong>not</strong> applied above. The
+            amount shown is a line-level reference for this shipment only — it is not an
+            invoice and not the amount payable.
+          </p>
+        ) : null}
 
         {delivery.memo ? (
           <div className="mt-6">
