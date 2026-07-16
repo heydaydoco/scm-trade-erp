@@ -286,7 +286,86 @@ from (
   from (values ('anon'),('authenticated')) as r(role)
   cross join (values ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
   where has_table_privilege(r.role, 'public.audit_log', p.priv)
-) x;
+  union all
+  -- P4.3 출고 테이블도 select 만.
+  select t.tbl, r.role, p.priv
+  from (values ('deliveries'),('delivery_lines')) as t(tbl)
+  cross join (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
+  where has_table_privilege(r.role, 'public.' || t.tbl, p.priv)
+) x
+
+union all
+
+-- ── ⑪ 출고 원장 대사 (P4.3) ────────────────────────────────────────────────
+--  살아있는 delivery_lines 합 = 그 출고가 만든 DLV_OUT 원장합(REVERSAL 상쇄 후)의 절댓값.
+--  DLV_OUT 은 음수라 부호를 맞춰 비교한다.
+select
+  '⑪ 출고↔원장 대사',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select d.id
+  from public.deliveries d
+  left join (
+    select delivery_id, sum(qty) as line_sum from public.delivery_lines group by delivery_id
+  ) l on l.delivery_id = d.id
+  left join (
+    select m.ref_doc_id as dlv_id,
+           sum(m.qty) + coalesce(sum(rv.qty), 0) as ledger_sum
+    from public.stock_movements m
+    left join public.stock_movements rv on rv.reversal_of_id = m.id
+    where m.ref_doc_type = 'delivery' and m.movement_type = 'DLV_OUT'
+    group by m.ref_doc_id
+  ) v on v.dlv_id = d.id
+  where case when d.status = 'cancelled' then 0 else -coalesce(l.line_sum, 0) end
+        is distinct from coalesce(v.ledger_sum, 0)
+) d
+
+union all
+
+-- ── ⑫ 수주 잔량 음수 (초과출고) ─────────────────────────────────────────────
+--  ⚠️ 결함이 아니다 — 초과출고는 경고 후 허용(원칙 8과 같은 결).
+select
+  '⑫ 수주 잔량 음수(초과출고)',
+  case when count(*) = 0 then '정상' else '※ ' || count(*) || '건 (초과출고 — 허용됨)' end
+from public.so_open_qty where open_qty < 0
+
+union all
+
+-- ── ⓐ' 살아있는 출고가 있는데 수주 상태가 partial/completed 가 아님 ────────
+select
+  'ⓐ'' 출고 있는데 상태 미전이',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.sales_orders so
+where exists (
+        select 1 from public.deliveries d
+         where d.ref_doc_id = so.id and d.status <> 'cancelled')
+  and so.status not in ('partial', 'completed')
+
+union all
+
+-- ── ⓑ' 살아있는 출고가 0건인데 상태가 partial ───────────────────────────────
+select
+  'ⓑ'' 출고 0인데 partial',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.sales_orders so
+where so.status = 'partial'
+  and not exists (
+        select 1 from public.deliveries d
+         where d.ref_doc_id = so.id and d.status <> 'cancelled')
+
+union all
+
+-- ── ⓒ' 수주별 최초 출고의 세대 도장이 비어 있음 ────────────────────────────
+select
+  'ⓒ'' 최초 출고 도장 누락',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select distinct on (ref_doc_id) ref_doc_id, so_status_before
+  from public.deliveries
+  order by ref_doc_id, created_at
+) f
+where f.so_status_before is null;
 
 -- ⬆ 이 판정표가 **파일의 마지막 결과**다 (Supabase SQL Editor 는 여러 문장을 실행해도
 --   마지막 SELECT 의 결과만 Results 에 보여준다 → 합격 판정이 가려지지 않게 맨 뒤에 둔다).
