@@ -51,11 +51,14 @@ export function ShipmentForm({
   draft,
   partners,
   orderOptions,
+  lockedOrderKeys,
 }: {
   shipment?: Shipment;
   draft?: ShipmentInput;
   partners: { id: string; name: string; country: string | null }[];
   orderOptions: OrderOption[];
+  /** 화물 라인이 달린 주문(`SO::id`/`PO::id`) — 연결 해제 ✕ 를 잠근다(원칙 5, P4.4). */
+  lockedOrderKeys?: string[];
 }) {
   const [state, formAction, pending] = useActionState<
     ShipmentFormState,
@@ -378,14 +381,24 @@ export function ShipmentForm({
                       </span>
                     ) : null}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => removeOrder(l.orderType, l.orderId)}
-                    className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                    title="연결 해제"
-                  >
-                    ✕
-                  </button>
+                  {lockedOrderKeys?.includes(`${l.orderType}::${l.orderId}`) ? (
+                    // 화물 라인이 남아 있는 주문은 해제 불가 — DB 지연 가드의 UI 층.
+                    <span
+                      className="text-xs text-amber-700"
+                      title="이 주문의 화물 라인이 아래 '화물 내역'에 남아 있습니다. 먼저 그 라인을 삭제하면 해제할 수 있습니다."
+                    >
+                      🔒 화물 라인 있음
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => removeOrder(l.orderType, l.orderId)}
+                      className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                      title="연결 해제"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               );
             })}

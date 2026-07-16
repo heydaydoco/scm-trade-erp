@@ -13,13 +13,16 @@ export function ReceiptPanel({
   openLines,
   receipts,
   liveCount,
+  shipmentLineCount = 0,
 }: {
   poId: string;
   openLines: PoOpenQty[];
   receipts: GoodsReceipt[];
   liveCount: number;
+  /** 이 발주 라인을 참조하는 살아있는 선적 화물 라인 수(P4.4 소비 가드). */
+  shipmentLineCount?: number;
 }) {
-  const locked = liveCount > 0;
+  const locked = liveCount > 0 || shipmentLineCount > 0;
   const totalOpen = openLines.reduce((s, l) => s + l.openQty, 0);
   const anyOpen = openLines.some((l) => l.openQty > 0);
   // 자유텍스트 품목(product_id null)은 원장이 받지 못한다 → 입고 불가.
@@ -43,10 +46,19 @@ export function ReceiptPanel({
 
       {locked && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          🔒 <b>이 발주는 잠겨 있습니다</b> — 살아있는 입고 {liveCount}건이 참조 중이라
-          수정·취소할 수 없습니다. 발주를 고치려면 <b>먼저 해당 입고를 취소</b>하세요.
+          🔒 <b>이 발주는 잠겨 있습니다</b> —{" "}
+          {liveCount > 0 && <>살아있는 입고 {liveCount}건</>}
+          {liveCount > 0 && shipmentLineCount > 0 && "과 "}
+          {shipmentLineCount > 0 && <>선적 화물 라인(발주 라인 {shipmentLineCount}건)</>}
+          이 참조 중이라 수정·취소할 수 없습니다. 발주를 고치려면{" "}
+          <b>
+            {liveCount > 0 && "해당 입고를 먼저 취소"}
+            {liveCount > 0 && shipmentLineCount > 0 && "하고, "}
+            {shipmentLineCount > 0 && "해당 선적의 '화물 내역'에서 이 발주의 라인을 삭제"}
+          </b>
+          하세요.
           <div className="mt-1 text-xs opacity-80">
-            입고가 참조하던 발주 라인이 수정으로 사라지면 입고 기록이 어느 라인에서
+            후속 전표가 참조하던 발주 라인이 수정으로 사라지면 그 기록이 어느 라인에서
             왔는지 알 수 없게 됩니다(원칙 5 — 확정 전표 불변).
           </div>
         </div>

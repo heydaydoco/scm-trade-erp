@@ -10,6 +10,7 @@ import {
   listDeliveriesForSo,
   countLiveDeliveriesForSo,
 } from "@/services/deliveries";
+import { countLiveShipmentLinesForSo } from "@/services/shipmentCargo";
 import {
   SalesOrderForm,
   type ItemOption,
@@ -26,22 +27,37 @@ export default async function EditSalesOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [salesOrder, partners, items, rates, openLines, deliveries, liveCount] =
-    await Promise.all([
-      getSalesOrder(id),
-      listPartners(),
-      listItems(),
-      getLatestRates(),
-      listSoOpenQty(id),
-      listDeliveriesForSo(id),
-      countLiveDeliveriesForSo(id),
-    ]);
+  const [
+    salesOrder,
+    partners,
+    items,
+    rates,
+    openLines,
+    deliveries,
+    liveCount,
+    shipmentLineCount,
+  ] = await Promise.all([
+    getSalesOrder(id),
+    listPartners(),
+    listItems(),
+    getLatestRates(),
+    listSoOpenQty(id),
+    listDeliveriesForSo(id),
+    countLiveDeliveriesForSo(id),
+    countLiveShipmentLinesForSo(id),
+  ]);
   if (!salesOrder) notFound();
 
-  // 원칙 5(잔량 소비 가드) — 살아있는 출고가 참조 중이면 수주는 잠긴다.
-  // DB 트리거가 최종 방어선이지만, 여기서 폼 자체를 감춰야 사용자가 저장을 눌렀다가
-  // 날것의 DB 예외를 보는 일이 없다. (P4.2 발주 상세와 같은 규칙)
-  const locked = liveCount > 0;
+  // 원칙 5(잔량 소비 가드) — 살아있는 출고 또는 **선적 화물 라인**(P4.4)이 참조
+  // 중이면 수주는 잠긴다. DB 트리거가 최종 방어선이지만, 여기서 폼 자체를 감춰야
+  // 사용자가 저장을 눌렀다가 날것의 DB 예외를 보는 일이 없다.
+  const locked = liveCount > 0 || shipmentLineCount > 0;
+  const lockReason = [
+    liveCount > 0 ? "출고" : null,
+    shipmentLineCount > 0 ? "선적 화물" : null,
+  ]
+    .filter(Boolean)
+    .join("와 ");
 
   const partnerOptions: PartnerOption[] = partners.map((p) => ({
     id: p.id,
@@ -100,13 +116,18 @@ export default async function EditSalesOrderPage({
         // 잠긴 수주는 폼을 렌더하지 않는다 — 고칠 수 없는 폼을 보여주는 게 더 나쁘다.
         // 내용은 아래 잔량표 + 주문확인서 인쇄로 확인한다.
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
-          🔒 출고가 참조 중이라 수정 폼이 잠겼습니다.
+          🔒 {lockReason}이 참조 중이라 수정 폼이 잠겼습니다.
           <div className="mt-1 text-xs text-slate-500">
             내용은{" "}
             <Link href={`/sales-orders/${salesOrder.id}/print`} className="underline">
               주문확인서 보기
             </Link>
-            에서 확인하고, 고쳐야 하면 아래 출고 이력에서 해당 출고를 먼저 취소하세요.
+            에서 확인하세요. 고쳐야 하면
+            {liveCount > 0 && " 아래 출고 이력에서 해당 출고를 취소"}
+            {liveCount > 0 && shipmentLineCount > 0 && "하고,"}
+            {shipmentLineCount > 0 &&
+              " 해당 선적의 '화물 내역'에서 이 수주의 라인을 삭제"}
+            하세요.
           </div>
         </div>
       ) : (
@@ -124,6 +145,7 @@ export default async function EditSalesOrderPage({
         openLines={openLines}
         deliveries={deliveries}
         liveCount={liveCount}
+        shipmentLineCount={shipmentLineCount}
       />
     </div>
   );
