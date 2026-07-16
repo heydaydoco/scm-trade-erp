@@ -1,0 +1,144 @@
+-- ============================================================================
+--  정합성 검산 세트 (SPEC §8 — "각 단계마다 정합성 테스트")
+-- ============================================================================
+--  성격: 읽기 전용. SELECT만 한다. 몇 번 돌려도 무해하다.
+--  실행: Supabase 대시보드 → SQL Editor → New query → 붙여넣기 → Run.
+--
+--  읽는 법: 각 검사의 `결과` 열이 **전부 '정상'** 이면 통과.
+--           '⚠️ N건' 이 하나라도 뜨면 그 검사 아래 상세 쿼리로 원인을 본다.
+--
+--  왜 SQL인가: 순수 로직(부호 매핑·KST·D-day)은 Vitest가 잡지만(npm test),
+--  "DB에 실제로 쌓인 데이터가 원칙을 지키고 있는가"는 DB에서만 확인된다.
+-- ============================================================================
+
+-- ── ① 유형과 qty 부호가 어긋난 행 ───────────────────────────────────────────
+--  규칙: INIT·ADJ_IN·GR_IN 은 +, ADJ_OUT·DLV_OUT 은 −.
+--        REVERSAL 은 원행의 반대이므로 ± 둘 다 정상 → 검사에서 제외.
+--  부호는 RPC가 유형으로 결정하므로(save_stock_adjustment) 여기 걸리면
+--  누군가 RPC를 우회해 직접 INSERT 했다는 뜻이다(= 봉인 구멍).
+select
+  '① 유형↔부호 불일치' as 검사,
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end as 결과
+from public.stock_movements
+where (movement_type in ('INIT','ADJ_IN','GR_IN')  and qty < 0)
+   or (movement_type in ('ADJ_OUT','DLV_OUT')      and qty > 0)
+
+union all
+
+-- ── ② 역분개 행인데 원행 포인터가 없음 / 아닌데 있음 ────────────────────────
+--  REVERSAL 은 반드시 reversal_of_id 를 가져야 하고, 그 외 유형은 가지면 안 된다.
+select
+  '② REVERSAL↔포인터 불일치',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.stock_movements
+where (movement_type =  'REVERSAL' and reversal_of_id is null)
+   or (movement_type <> 'REVERSAL' and reversal_of_id is not null)
+
+union all
+
+-- ── ③ REVERSAL 을 가리키는 REVERSAL (역분개의 역분개) ───────────────────────
+--  사슬이 생기면 무엇이 무엇을 상쇄했는지 읽을 수 없다. RPC가 막지만 이중 확인.
+select
+  '③ 역분개의 역분개',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.stock_movements r
+join public.stock_movements s on s.id = r.reversal_of_id
+where r.movement_type = 'REVERSAL' and s.movement_type = 'REVERSAL'
+
+union all
+
+-- ── ③-b 한 행이 두 번 역분개됨 ──────────────────────────────────────────────
+--  유니크 부분 인덱스(stock_movements_reversal_once_idx)가 원천 차단하므로
+--  여기 걸리면 인덱스가 없다는 뜻이다.
+select
+  '③-b 이중 역분개',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select reversal_of_id
+  from public.stock_movements
+  where reversal_of_id is not null
+  group by reversal_of_id
+  having count(*) > 1
+) d
+
+union all
+
+-- ── ④ 권한 봉인 — "불변을 주장하는" 3개 객체 ────────────────────────────────
+--  Supabase 는 public 스키마에 `alter default privileges … grant all` 을 걸어둔다.
+--  → 새 테이블도 만들자마자 anon 이 전권을 갖는다. "부여 안 함"으로는 못 막는다.
+--  → 명시적 REVOKE 가 실제로 먹었는지 여기서 확인한다.
+--
+--   stock_movements: select 만 남아야 한다(insert 포함 전부 회수 — 쓰기는 RPC로만).
+select
+  '④-a 원장 쓰기권한 잔존',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(grantee || '/' || privilege_type, ', ') end
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and table_name   = 'stock_movements'
+  and grantee      in ('anon','authenticated')
+  and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE')
+
+union all
+
+--   fx_rates: 추가 전용 대장 → insert 는 유지, update/delete/truncate 는 0건이어야.
+select
+  '④-b fx_rates 변경권한 잔존',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(grantee || '/' || privilege_type, ', ') end
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and table_name   = 'fx_rates'
+  and grantee      in ('anon','authenticated')
+  and privilege_type in ('UPDATE','DELETE','TRUNCATE')
+
+union all
+
+--   audit_log: 앱은 읽기만 → update/delete/truncate 0건이어야.
+--   (insert 는 이번 봉인 범위 밖 — fn_audit 이 SECURITY DEFINER 라 회수해도 안전하지만
+--    지시에 따라 유지. 아래 ⑤에서 그 사실만 확인한다.)
+select
+  '④-c audit_log 변경권한 잔존',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(grantee || '/' || privilege_type, ', ') end
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and table_name   = 'audit_log'
+  and grantee      in ('anon','authenticated')
+  and privilege_type in ('UPDATE','DELETE','TRUNCATE')
+
+union all
+
+-- ── ⑤ fn_audit 이 SECURITY DEFINER 인가 ────────────────────────────────────
+--  DEFINER 여야 앱에 쓰기권한 없이도 트리거가 감사행을 남길 수 있다(P2.1의 전제).
+--  INVOKER 로 바뀌어 있으면 audit_log insert 회수 시 감사 붙은 모든 저장이 죽는다.
+select
+  '⑤ fn_audit SECURITY DEFINER',
+  case when bool_and(prosecdef) then '정상' else '⚠️ INVOKER!' end
+from pg_proc
+where proname = 'fn_audit' and pronamespace = 'public'::regnamespace
+
+union all
+
+-- ── ⑥ 원장에 감사 트리거가 붙지 않았는가 ────────────────────────────────────
+--  원장 자체가 이미 append-only 감사기록이다. fn_audit 을 붙이면 이중 기록.
+select
+  '⑥ 원장 감사트리거 미부착',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from pg_trigger
+where tgrelid = 'public.stock_movements'::regclass and not tgisinternal;
+
+
+-- ============================================================================
+--  ⑦ 품목·창고별 원장 합 = 현재고 (눈으로 보는 검산)
+-- ============================================================================
+--  뷰(stock_on_hand)와 원장 직접 합산이 일치하는지 + 마이너스 재고 표시.
+--  마이너스는 "틀림"이 아니다 — 원칙 8(경고 후 허용). 다만 전기 누락 신호이므로 본다.
+select
+  v.item_code                                   as 품목코드,
+  v.item_name                                   as 품목명,
+  v.warehouse_code                              as 창고,
+  v.on_hand                                     as 현재고,
+  v.uom                                         as 단위,
+  (select count(*) from public.stock_movements m
+    where m.item_id = v.item_id and m.warehouse_code = v.warehouse_code) as 원장행수,
+  case when v.on_hand < 0 then '⚠️ 마이너스(전기 누락 의심)' else '' end as 비고
+from public.stock_on_hand v
+order by (v.on_hand < 0) desc, v.item_code nulls last, v.warehouse_code;
