@@ -228,7 +228,7 @@ export default async function ShipmentPrintPage({
         </table>
         <p className="mb-8 text-[11px] text-zinc-400">
           * Quantity totals are shown per unit; package totals per package type.
-          Amounts/prices are not part of this document.
+          Prices are not part of this document.
         </p>
 
         {/* Shipping Marks */}
