@@ -166,12 +166,31 @@ export const SO_STATUS: Code[] = [
   { code: "cancelled", label: "취소" },
 ];
 
-/** 발주 상태 (P3.1 — 실제 purchase_orders.status 값). */
-export const PO_STATUS: Code[] = [
+/**
+ * 발주 상태 — **표시용 전체 목록** (P3.1 + P4.2 `partial`).
+ * `purchase_orders.status` 에 CHECK 제약이 없어(text default 'draft') 코드 추가가 자유롭다.
+ */
+export const PO_STATUS_ALL: Code[] = [
   { code: "draft", label: "작성중" },
   { code: "sent", label: "발주송부" },
   { code: "confirmed", label: "공급사확정" },
+  { code: "partial", label: "부분입고" }, // ★ P4.2 — 기계 전용(아래 주석)
   { code: "completed", label: "완료" },
+  { code: "cancelled", label: "취소" },
+];
+
+/**
+ * 발주 폼에서 **사람이 고를 수 있는** 상태.
+ *
+ * ⚠️ `partial`(부분입고)은 제외한다 — 입고 RPC 만 전이시키는 **기계 전용 상태**다.
+ *    사람이 손으로 넣으면 실제 입고 없이 부분입고가 되어 잔량과 상태가 어긋난다.
+ *    (`completed` 수동 선택은 P3.1 동작 그대로 유지 — 입고 없이 종결하는 실무가 있다)
+ */
+export const PO_STATUS: Code[] = PO_STATUS_ALL.filter((s) => s.code !== "partial");
+
+/** 입고 상태 (P4.2). 취소는 삭제가 아니라 상태 + 원장 역분개(원칙 1·5). */
+export const GR_STATUS: Code[] = [
+  { code: "normal", label: "정상" },
   { code: "cancelled", label: "취소" },
 ];
 

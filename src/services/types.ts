@@ -580,3 +580,49 @@ export interface StockMovement {
   memo: string | null;
   createdAt: string;
 }
+
+/* ---------- 입고 GR (P4.2 — SPEC C5) ---------- */
+
+/**
+ * 발주 라인의 잔량 — **저장된 컬럼이 아니라 계산**(뷰 po_open_qty, 원칙 1).
+ * `received_qty` 를 po_lines 에 저장하지 않는다. 잔량 = 발주수량 − Σ(취소 아닌 입고).
+ */
+export interface PoOpenQty {
+  poLineId: string;
+  poId: string;
+  sortOrder: number | null;
+  productId: string | null; // null = 자유텍스트 품목 → 입고 불가(원장은 실품목만 받는다)
+  productName: string | null;
+  unit: string | null;
+  orderedQty: number;
+  receivedQty: number;
+  openQty: number; // 음수 = 초과입고(차단 아님, 원칙 8)
+}
+
+export interface GrLine {
+  id: string;
+  lineNo: number;
+  poLineId: string | null; // 소프트 포인터(FK 아님)
+  itemId: string;
+  itemName: string | null; // 스냅샷
+  qty: number;
+  uom: string; // 스냅샷
+  lotNo: string | null; // 칸은 P4.2부터, 활성화는 P5
+  memo: string | null;
+}
+
+/** 입고 헤더. 부분입고 = 같은 발주에 GR 여러 건. 취소는 상태 + 원장 역분개. */
+export interface GoodsReceipt {
+  id: string;
+  grNo: string;
+  receiptDate: string; // YYYY-MM-DD (KST)
+  status: string; // GR_STATUS: normal | cancelled
+  warehouseCode: string;
+  refDocType: string; // 'purchase_order'
+  refDocId: string;
+  poNumber: string | null; // 표시용 조인
+  partnerName: string | null;
+  memo: string | null;
+  createdAt: string;
+  lines: GrLine[];
+}
