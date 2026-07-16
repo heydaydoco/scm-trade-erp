@@ -40,7 +40,9 @@ export function StockAdjustForm({
   const [showLot, setShowLot] = useState(Boolean(v?.lotNo));
 
   const item = items.find((i) => i.id === itemId);
-  const current = onHand[`${itemId}|${warehouseCode}`] ?? 0;
+  // 키에 단위 포함 — 뷰 입도가 item×warehouse×uom 이다(P4.1f). 새 조정은 품목의
+  // 현재 마스터 단위로 기록되므로, 예상재고도 그 단위의 기존 재고와만 더한다.
+  const current = item ? (onHand[`${itemId}|${warehouseCode}|${item.uom}`] ?? 0) : 0;
 
   // 저장 전 예상재고 — 원칙 8(마이너스는 차단이 아니라 경고 후 허용)의 근거.
   // 서비스의 projectedOnHand와 같은 규칙이지만, 여기는 클라이언트라 서버 코드를 못 부른다.

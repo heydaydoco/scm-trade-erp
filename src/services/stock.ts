@@ -190,14 +190,31 @@ export async function listStockOnHand(opts?: {
   includeZero?: boolean;
 }): Promise<StockOnHand[]> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("stock_on_hand")
-    .select(ON_HAND_COLUMNS)
-    .order("item_code", { ascending: true, nullsFirst: false })
-    .order("warehouse_code", { ascending: true });
 
-  if (error) throw new Error(`현재고 조회 실패: ${error.message}`);
-  const rows = ((data ?? []) as unknown as OnHandRow[]).map(mapOnHand);
+  // ⚠️ .limit() 없이 부르면 PostgREST 기본 상한(1000행)에서 **경고 없이 잘린다.**
+  //    잘린 목록으로 예상재고를 계산하면 현재고가 −90인 품목이 0으로 보여
+  //    마이너스 경고(원칙 8)가 통째로 죽는다 → 성능이 아니라 정확성 문제.
+  //    '전 행'이 실제로 전 행이 되도록 페이징한다.
+  //    ★ item_id 타이브레이커 필수 — item_code 는 null·중복 가능이라 전순서가 아니면
+  //      페이지 경계에서 행이 중복·누락된다(잘림을 페이징 버그로 바꾸는 꼴).
+  const PAGE = 1000;
+  const collected: OnHandRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("stock_on_hand")
+      .select(ON_HAND_COLUMNS)
+      .order("item_code", { ascending: true, nullsFirst: false })
+      .order("warehouse_code", { ascending: true })
+      .order("uom", { ascending: true })
+      .order("item_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (error) throw new Error(`현재고 조회 실패: ${error.message}`);
+    const batch = (data ?? []) as unknown as OnHandRow[];
+    collected.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  const rows = collected.map(mapOnHand);
 
   // 재고 0 숨김은 뷰가 아니라 여기서 — 뷰는 사실을 그대로 두고 표시 정책만 서비스가 갖는다.
   const filtered = opts?.includeZero ? rows : rows.filter((r) => r.onHand !== 0);
@@ -210,10 +227,17 @@ export async function listStockOnHand(opts?: {
   });
 }
 
-/** 특정 품목·창고의 현재고 1건 (조정 폼의 예상재고 계산용). 없으면 0. */
+/**
+ * 특정 품목·창고·단위의 현재고 1건. 없으면 0.
+ *
+ * ⚠️ uom 이 인자인 이유: 뷰의 입도가 item×warehouse×**uom** 이다(P4.1f).
+ *    품목 마스터의 단위가 원장 기록 뒤에 바뀌면 같은 품목에 두 단위 행이 생긴다.
+ *    그걸 말없이 더하면 100 PCS − 10 KG = 90 같은 거짓 숫자가 나온다 → 단위별로 본다.
+ */
 export async function getOnHand(
   itemId: string,
   warehouseCode = "MAIN",
+  uom = "PCS",
 ): Promise<number> {
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
@@ -221,22 +245,29 @@ export async function getOnHand(
     .select("on_hand")
     .eq("item_id", itemId)
     .eq("warehouse_code", warehouseCode)
+    .eq("uom", uom)
     .maybeSingle();
 
   if (error) throw new Error(`현재고 조회 실패: ${error.message}`);
   return data ? num((data as { on_hand: number | string | null }).on_hand) : 0;
 }
 
-/** 마이너스 재고 품목 수 — 홈 대시보드 배지(원칙 8의 일일 신호). */
+/**
+ * 마이너스 재고 품목 수 — 홈 대시보드 배지(원칙 8의 일일 신호).
+ *
+ * ⚠️ 전 행을 받아 JS에서 세면 안 된다 — PostgREST 기본 상한(1000행)에 걸리면
+ *    **경고 없이 잘려서 건수를 줄여 보고**한다(성능이 아니라 정확성 문제).
+ *    필터·집계를 DB에 맡기고 count만 받는다(head=true → 행 전송 0).
+ */
 export async function getNegativeStockCount(): Promise<number> {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  const { count, error } = await supabase
     .from("stock_on_hand")
-    .select("item_id, on_hand");
+    .select("item_id", { count: "exact", head: true })
+    .lt("on_hand", 0);
 
   if (error) throw new Error(`마이너스 재고 조회 실패: ${error.message}`);
-  const rows = (data ?? []) as unknown as { on_hand: number | string }[];
-  return rows.filter((r) => num(r.on_hand) < 0).length;
+  return count ?? 0;
 }
 
 /** 원장 조회 (최신순). 필터: 품목·유형·기간. */

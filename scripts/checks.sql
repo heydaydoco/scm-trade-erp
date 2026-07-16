@@ -25,6 +25,18 @@ where (movement_type in ('INIT','ADJ_IN','GR_IN')  and qty < 0)
 
 union all
 
+-- ── ①-b 비유한 수량 (NaN·±Infinity) ────────────────────────────────────────
+--  ① 의 부호 비교(qty<0)로는 NaN 을 못 잡는다(NaN 은 모든 비교가 false).
+--  NaN 이 한 행이라도 있으면 그 품목 현재고가 영구히 NaN 이 되고 역분개로도 복구 불가
+--  (-NaN = NaN). P4.1f 의 CHECK 가 막지만, 그 CHECK 가 실제로 걸렸는지 여기서 확인한다.
+select
+  '①-b 비유한 수량(NaN/Inf)',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.stock_movements
+where not (qty > '-Infinity'::numeric and qty < 'Infinity'::numeric)
+
+union all
+
 -- ── ② 역분개 행인데 원행 포인터가 없음 / 아닌데 있음 ────────────────────────
 --  REVERSAL 은 반드시 reversal_of_id 를 가져야 하고, 그 외 유형은 가지면 안 된다.
 select
@@ -131,7 +143,24 @@ select
   '⑥ 원장 감사트리거 미부착',
   case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
 from pg_trigger
-where tgrelid = 'public.stock_movements'::regclass and not tgisinternal;
+where tgrelid = 'public.stock_movements'::regclass and not tgisinternal
+
+union all
+
+-- ── ⑧ 원장 단위 혼재 ────────────────────────────────────────────────────────
+--  같은 품목·창고에 서로 다른 uom 행이 섞인 경우. 품목 마스터의 단위를 원장 기록 뒤에
+--  바꾸면 발생한다(P4.1f 이전 뷰는 이걸 말없이 더해 거짓 숫자를 냈다).
+--  ⚠️ 데이터 손상은 아니다 — 원장은 단위 스냅샷을 정확히 갖고 있고, 뷰가 행을 쪼개
+--     사실대로 보여준다. 다만 그 품목의 "현재고 한 숫자"는 의미가 없으므로 정리 대상이다.
+select
+  '⑧ 원장 단위 혼재',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select item_id, warehouse_code
+  from public.stock_movements
+  group by item_id, warehouse_code
+  having count(distinct uom) > 1
+) d;
 
 
 -- ============================================================================

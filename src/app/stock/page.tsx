@@ -44,9 +44,12 @@ export default async function StockPage({
       uom: i.baseUom ?? "PCS",
     }));
 
+  // 키에 단위가 들어간다 — 뷰 입도가 item×warehouse×uom 이기 때문(P4.1f).
+  // 마스터 단위가 원장 기록 뒤에 바뀌면 한 품목에 두 단위 행이 생기고, 그걸 더하면
+  // 100 PCS − 10 KG = 90 같은 거짓 숫자가 된다. 폼은 품목의 현재 단위 행만 본다.
   const onHandMap: OnHandMap = {};
   for (const r of allOnHand) {
-    onHandMap[`${r.itemId}|${r.warehouseCode}`] = r.onHand;
+    onHandMap[`${r.itemId}|${r.warehouseCode}|${r.uom}`] = r.onHand;
   }
 
   // 창고 마스터(A5)는 P4 후속 — 지금은 원장에 실제로 쓰인 창고 + 기본 MAIN.
