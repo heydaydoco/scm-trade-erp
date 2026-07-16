@@ -1,3 +1,4 @@
+import { todayKst } from "@/lib/date";
 import { listPartners } from "@/services/partners";
 import { listItems } from "@/services/items";
 import {
@@ -25,7 +26,7 @@ export default async function NewInquiryPage() {
       hsCode: i.hsCode,
       baseUom: i.baseUom,
     }));
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">

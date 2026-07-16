@@ -1,3 +1,4 @@
+import { todayKst } from "@/lib/date";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSalesOrder } from "@/services/salesOrders";
@@ -41,7 +42,7 @@ export default async function EditSalesOrderPage({
       baseUom: i.baseUom,
       stdPrice: i.stdPrice,
     }));
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
 
   return (
     <div className="mx-auto max-w-5xl px-8 py-8">

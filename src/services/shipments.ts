@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { periodKst } from "@/lib/date";
 import type {
   Milestone,
   PurchaseOrder,
@@ -90,9 +91,12 @@ function assembleShipment(row: ShipmentRow): Shipment {
   };
 }
 
-/** 발번 기간(YYYYMM) — 선적은 헤더 날짜가 없어 오늘 기준. */
+/**
+ * 발번 기간(YYYYMM) — 선적은 헤더 날짜가 없어 오늘 기준.
+ * ⚠️ 반드시 KST: 구 코드는 UTC라 한국 8/1 08:00 부킹이 SHP-202607로 한 달 밀렸다(P4.0-a).
+ */
 function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7).replace("-", "");
+  return periodKst();
 }
 
 function headerPayload(input: ShipmentInput): Record<string, unknown> {

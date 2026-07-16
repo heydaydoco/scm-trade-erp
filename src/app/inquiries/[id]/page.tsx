@@ -1,3 +1,4 @@
+import { todayKst } from "@/lib/date";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getInquiry } from "@/services/inquiries";
@@ -38,7 +39,7 @@ export default async function EditInquiryPage({
       hsCode: i.hsCode,
       baseUom: i.baseUom,
     }));
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">

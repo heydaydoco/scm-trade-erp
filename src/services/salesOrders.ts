@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { periodOfYmd, todayKst } from "@/lib/date";
 import { DEFAULT_SO_TERMS, round2 } from "./codes";
 import type {
   Quotation,
@@ -67,8 +68,7 @@ export function lineAmount(quantity: number, unitPrice: number): number {
 
 /** order_date(YYYY-MM-DD)에서 발번 기간(YYYYMM) 도출. 없으면 오늘 기준. */
 function periodOf(dateStr: string | null): string {
-  const d = dateStr ?? new Date().toISOString().slice(0, 10);
-  return d.slice(0, 7).replace("-", "");
+  return periodOfYmd(dateStr ?? todayKst());
 }
 
 /** 입력에서 합계 재계산 (원칙 2 — 항상 라인의 합). */

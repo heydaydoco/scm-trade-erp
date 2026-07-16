@@ -1,6 +1,11 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { todayKst, daysBetween } from "@/lib/date";
 import { MILESTONE_TYPES, labelOf } from "./codes";
 import type { DeadlineItem, DeadlineSummary } from "./types";
+
+// P4.0-a: 순수 날짜 로직을 lib/date로 옮겨 발번 경로와 공유한다(단위 테스트 대상).
+// 기존 import 경로(@/services/deadlines)를 깨지 않도록 재수출.
+export { todayKst, daysBetween };
 
 /**
  * 임박 기일(기일 역산 알림) 서비스 — SPEC I7·E3, 원칙 7(로직/화면 분리).
@@ -16,23 +21,6 @@ import type { DeadlineItem, DeadlineSummary } from "./types";
  *   · 견적 유효기일: quotations.valid_until (status ∈ {draft, sent} — 승인/반려/만료 제외).
  *   · (미루는 소스: L/C 유효기일·최종선적일=P6, 대금 만기=P8 — 해당 테이블 생기면 추가)
  */
-
-/* ---------- 순수 날짜 로직 (I/O 없음 → 단위 테스트 가능) ---------- */
-
-/** 오늘의 한국(Asia/Seoul) 달력 날짜 'YYYY-MM-DD'. en-CA 로케일이 ISO 형식을 준다. */
-export function todayKst(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-}
-
-/**
- * 두 'YYYY-MM-DD' 사이 달력 일수 차 (to − from). 양쪽을 UTC 자정으로 파싱해 로컬 TZ 드리프트 제거.
- * dDay = daysBetween(오늘KST, 기일) → 음수=지남, 0=오늘, 양수=D-n.
- */
-export function daysBetween(fromYmd: string, toYmd: string): number {
-  const a = Date.parse(`${fromYmd}T00:00:00Z`);
-  const b = Date.parse(`${toYmd}T00:00:00Z`);
-  return Math.round((b - a) / 86400000);
-}
 
 /* ---------- 물리 행 모양 (이 파일 바깥으로 노출 안 함) ---------- */
 
