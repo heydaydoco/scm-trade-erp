@@ -175,6 +175,35 @@ export const PO_STATUS: Code[] = [
   { code: "cancelled", label: "취소" },
 ];
 
+/**
+ * 재고 이동 유형 (P4.1, SPEC D2 — 원칙 4 코드테이블: 부호·의미를 코드가 갖는다).
+ *
+ * ⚠️ `sign` 이 이 시스템의 부호 단일 진실이다. 화면은 항상 양수만 입력받고,
+ *    +/− 는 유형이 결정한다 → "감소인데 +30" 같은 모순이 구조적으로 불가능해진다.
+ *    DB 쪽에서도 save_stock_adjustment RPC 가 같은 규칙으로 부호를 정한다(이중 방어).
+ *
+ * REVERSAL 의 sign 은 0 = "고정 부호 없음". 역분개는 원행의 반대이므로 ± 둘 다 나온다.
+ * 새 패턴이 생기면 if 문이 아니라 여기 코드를 추가한다(원칙 4).
+ */
+export interface MovementType extends Code {
+  sign: 1 | -1 | 0; // +1 입고 / −1 출고 / 0 원행에 따름(REVERSAL)
+  tone: "in" | "out" | "reversal"; // 화면 색 구분
+}
+
+export const MOVEMENT_TYPES: MovementType[] = [
+  { code: "INIT", label: "기초재고", sign: 1, tone: "in" },
+  { code: "ADJ_IN", label: "조정 증가", sign: 1, tone: "in" },
+  { code: "ADJ_OUT", label: "조정 감소", sign: -1, tone: "out" },
+  { code: "GR_IN", label: "구매 입고", sign: 1, tone: "in" }, // P4.2 발주→입고가 생성
+  { code: "DLV_OUT", label: "판매 출고", sign: -1, tone: "out" }, // P4.3 수주→출고가 생성
+  { code: "REVERSAL", label: "역분개", sign: 0, tone: "reversal" },
+];
+
+/** 화면에서 사용자가 직접 고를 수 있는 조정 유형 3종(나머지는 전표·역분개가 만든다). */
+export const ADJUSTMENT_TYPES: MovementType[] = MOVEMENT_TYPES.filter((m) =>
+  ["INIT", "ADJ_IN", "ADJ_OUT"].includes(m.code),
+);
+
 /** 새 발주 기본 약관 (Purchase Order Terms). 서비스·폼이 공유(클라이언트 안전). */
 export const DEFAULT_PO_TERMS =
   "Please confirm acceptance of this purchase order in writing.\n" +

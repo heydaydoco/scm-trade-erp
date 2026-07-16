@@ -68,27 +68,34 @@ union all
 --  → 새 테이블도 만들자마자 anon 이 전권을 갖는다. "부여 안 함"으로는 못 막는다.
 --  → 명시적 REVOKE 가 실제로 먹었는지 여기서 확인한다.
 --
+--  ⚠️ `update ... set` 을 직접 쳐보는 방식으로는 검증할 수 없다 —
+--     SQL Editor 는 테이블 소유자(postgres)로 실행되어 권한 검사를 우회한다.
+--     has_table_privilege 로 anon/authenticated 의 **실효 권한**을 직접 물어야 한다
+--     (역할 상속·PUBLIC 부여까지 계산됨). 상세 표는 scripts/verify_seal.sql.
+
 --   stock_movements: select 만 남아야 한다(insert 포함 전부 회수 — 쓰기는 RPC로만).
 select
   '④-a 원장 쓰기권한 잔존',
-  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(grantee || '/' || privilege_type, ', ') end
-from information_schema.role_table_grants
-where table_schema = 'public'
-  and table_name   = 'stock_movements'
-  and grantee      in ('anon','authenticated')
-  and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE')
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(role || '/' || priv, ', ') end
+from (
+  select r.role, p.priv
+  from (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
+  where has_table_privilege(r.role, 'public.stock_movements', p.priv)
+) x
 
 union all
 
 --   fx_rates: 추가 전용 대장 → insert 는 유지, update/delete/truncate 는 0건이어야.
 select
   '④-b fx_rates 변경권한 잔존',
-  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(grantee || '/' || privilege_type, ', ') end
-from information_schema.role_table_grants
-where table_schema = 'public'
-  and table_name   = 'fx_rates'
-  and grantee      in ('anon','authenticated')
-  and privilege_type in ('UPDATE','DELETE','TRUNCATE')
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(role || '/' || priv, ', ') end
+from (
+  select r.role, p.priv
+  from (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
+  where has_table_privilege(r.role, 'public.fx_rates', p.priv)
+) x
 
 union all
 
@@ -97,12 +104,13 @@ union all
 --    지시에 따라 유지. 아래 ⑤에서 그 사실만 확인한다.)
 select
   '④-c audit_log 변경권한 잔존',
-  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(grantee || '/' || privilege_type, ', ') end
-from information_schema.role_table_grants
-where table_schema = 'public'
-  and table_name   = 'audit_log'
-  and grantee      in ('anon','authenticated')
-  and privilege_type in ('UPDATE','DELETE','TRUNCATE')
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(role || '/' || priv, ', ') end
+from (
+  select r.role, p.priv
+  from (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
+  where has_table_privilege(r.role, 'public.audit_log', p.priv)
+) x
 
 union all
 

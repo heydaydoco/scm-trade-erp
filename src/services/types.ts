@@ -545,3 +545,38 @@ export interface ShipmentInput {
   orders: ShipmentOrderLink[];
   milestones: Milestone[];
 }
+
+/* ---------- 재고 원장 (P4.1 — SPEC D1·D2·D3) ---------- */
+
+/**
+ * 현재고 1행 — **저장된 숫자가 아니라** 원장 합산 결과(뷰 stock_on_hand).
+ * 원칙 1: `items.qty = 47` 같은 수정 가능한 잔량 필드는 이 시스템에 존재하지 않는다.
+ */
+export interface StockOnHand {
+  itemId: string;
+  itemCode: string | null;
+  itemName: string | null;
+  uom: string;
+  warehouseCode: string;
+  onHand: number; // 음수 가능 — 차단이 아니라 경고 대상(원칙 8)
+}
+
+/** 원장 1행 (append-only). 수정·삭제되지 않는다. 정정은 반대부호 REVERSAL 행. */
+export interface StockMovement {
+  id: string;
+  movementType: string; // MOVEMENT_TYPES 코드
+  itemId: string;
+  itemCode: string | null;
+  itemName: string | null;
+  qty: number; // 부호 포함(+입고 / −출고). 유형이 부호를 정한다.
+  uom: string; // 품목 마스터에서 뜬 스냅샷(마스터가 바뀌어도 과거 행 불변)
+  warehouseCode: string;
+  lotNo: string | null; // 칸은 P4.1부터, 활성화는 P5 (원장은 백필 불가)
+  movedAt: string; // YYYY-MM-DD 증빙일(KST). created_at과 다르다.
+  refDocType: string | null; // 선행 전표 소프트 포인터 — P4.2 GR / P4.3 Delivery가 채운다
+  refDocId: string | null;
+  reversalOfId: string | null; // 이 행이 되돌린 원행 (REVERSAL일 때만)
+  reversedById: string | null; // 이 행을 되돌린 REVERSAL 행 (없으면 null = 역분개 가능)
+  memo: string | null;
+  createdAt: string;
+}
