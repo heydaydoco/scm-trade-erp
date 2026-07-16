@@ -160,7 +160,8 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 ### A. 마스터 데이터 (Foundation)
 - A1. 품목 마스터 (HS코드, 단위, 표준단가, 원산지, 위험물여부, 시리얼/로트 관리여부) ✅ *구현(P1.3)* `[P1]`
 - A2. BOM (자재명세서, 다단, 스크랩률, 유효일자=설계변경 컷인) `[P5]`
-- A3. 거래처 마스터 (고객/공급사/both, 사업자번호, 결제조건, 통화, Incoterms, 신용한도) ✅ *구현(P1.2)* `[P1]`
+- A3. 거래처 마스터 (고객/공급사/both, 결제조건, 통화, Incoterms, 국가/도시/주소, 담당자) ✅ *구현(P1.2 — 물리 `companies` 재사용, 서비스 레이어가 도메인 `Partner`로 매핑)* `[P1]`
+  - ⛔ **미구현(백로그)**: **사업자번호**(§7의 10자리 체크섬 검증 포함) · **신용한도(credit_limit)** — 컬럼도 입력 칸도 없다. 2026-07-16 전수감사에서 "✅ 완료"가 실물과 어긋난 유일한 지점으로 확인돼 서술을 정정했다. 여신 관리가 실제로 필요해지는 **AR/AP 단계 `[P8]`** 에서 `companies`에 컬럼 추가로 해소한다(사업자번호는 그 전에 필요하면 단독 추가 가능).
 - A4. 거래처 연락처/주소 (역할: shipper/consignee/notify/bill-to/ship-to) `[P2]`
 - A5. 창고·위치 마스터 (창고 → 구역 → 로케이션, 외주처도 '위치'로) `[P4]`
 - A6. 코드 테이블 (이동유형, 문서상태, 단위, 통화, 국가/항구/공항) `[P1]`
@@ -244,7 +245,10 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - I2. SCM KPI (납기준수율 OTIF, 재고회전율, DSO, 수주잔고) `[P8]`
 - I3. 문서 흐름 추적 화면 (전표 사슬 전체 조회) `[P4]`
 - I4. 결재/승인 워크플로 (기안→검토→승인→반려, 대결/전결) `[P7]`
-- I5. 감사 추적(Audit Log) — 모든 변경 이력 ✅ *구현(P2.1 — 범용 DB 트리거 `fn_audit`, quotations 헤더 감사, 읽기전용 `/audit`)* `[P2]` (처음부터)
+- I5. 감사 추적(Audit Log) — 모든 변경 이력 ✅ *구현(P2.1 — 범용 DB 트리거 `fn_audit`, 읽기전용 `/audit`)* `[P2]` (처음부터)
+  - 부착 대상 = **전표 헤더 4개**(quotations·sales_orders·purchase_orders·shipments) + **마스터 2개**(companies·products — P4.0-b에서 추가). 마스터는 RPC가 아니라 앱이 직접 UPDATE 하는데도 감사 밖이라 표준단가 변경 이력이 남지 않던 것을 해소했다.
+  - **미부착(의도적)**: 라인 테이블(quotation_items·so_lines·po_lines·shipment_orders·milestones) — 저장 시 전량 DELETE+재INSERT라 감사행 폭주·시각적 '삭제' 모순. `fx_rates` — 대장 자체가 추가전용 불변이라 중복. `inquiries` — 후속 단계에서 트리거 2줄로 부착 가능.
+  - 한계: `actor`는 인증 도입 전까지 항상 `system`(트리거는 `app.actor` 세션 변수를 읽게 돼 있으나 설정 주체가 없음) → RBAC `[P8]`에서 해소.
 - I6. 사용자/권한 (역할 기반 RBAC, 부서별 접근) `[P8]`
 - I7. 알림 엔진 (기일 D-7/D-3/D-1, 발주점, 미수금) — ✅ *기일 임박 목록 부분구현(P3.3 — 앱내 D-7/3/1·KST); 이메일·푸시·발주점·미수금은 후속* `[P6]`
 
