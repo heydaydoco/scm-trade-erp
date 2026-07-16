@@ -32,6 +32,7 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
     items: [
       { href: "/stock", label: "현재고" },
       { href: "/receipts", label: "입고" },
+      { href: "/deliveries", label: "출고" },
       { href: "/stock/movements", label: "재고 원장" },
     ],
   },
