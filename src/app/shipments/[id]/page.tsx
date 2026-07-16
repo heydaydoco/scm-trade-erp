@@ -54,16 +54,21 @@ export default async function EditShipmentPage({
 
   // ★ 화물 라인이 달린 주문은 연결 해제 불가(원칙 5 소비 가드의 UI 층 —
   //   DB 지연 트리거가 최종 방어선, 여기선 ✕ 를 잠가 날것의 예외를 예방).
+  //   취소된 선적은 잠그지 않는다 — DB 가드도 취소 선적의 라인을 "살아있는" 것으로
+  //   치지 않는데 UI 만 잠그면, 읽기전용 화물 카드 때문에 풀 수 없는 교착이 된다.
   const lineToOrder = new Map(
     shippable.map((s) => [s.orderLineId, `${s.orderType}::${s.orderId}`]),
   );
-  const lockedOrderKeys = Array.from(
-    new Set(
-      cargo.lines
-        .map((l) => (l.orderLineId ? lineToOrder.get(l.orderLineId) : null))
-        .filter((v): v is string => !!v),
-    ),
-  );
+  const lockedOrderKeys =
+    shipment.status === "cancelled"
+      ? []
+      : Array.from(
+          new Set(
+            cargo.lines
+              .map((l) => (l.orderLineId ? lineToOrder.get(l.orderLineId) : null))
+              .filter((v): v is string => !!v),
+          ),
+        );
 
   // 당사자 프리필용 — 스냅샷의 재료(마스터는 초기값·불러오기 버튼에만 쓰인다).
   const partnerRow = shipment.partnerId

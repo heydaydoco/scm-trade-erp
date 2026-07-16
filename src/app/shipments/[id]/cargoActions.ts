@@ -52,18 +52,25 @@ export async function saveShipmentCargoAction(
 
   let rawLines: unknown;
   let rawParties: unknown;
+  let rawKnown: unknown;
   try {
     rawLines = JSON.parse(String(formData.get("lines") ?? "[]"));
     rawParties = JSON.parse(String(formData.get("parties") ?? "[]"));
+    rawKnown = JSON.parse(String(formData.get("knownLineIds") ?? "[]"));
   } catch {
     return { error: "화물 payload 해석에 실패했습니다. 화면을 새로고침한 뒤 다시 시도하세요." };
   }
-  if (!Array.isArray(rawLines) || !Array.isArray(rawParties)) {
+  if (!Array.isArray(rawLines) || !Array.isArray(rawParties) || !Array.isArray(rawKnown)) {
     return { error: "화물 payload 형식이 잘못됐습니다. 화면을 새로고침한 뒤 다시 시도하세요." };
   }
+  const knownLineIds = rawKnown.filter((v): v is string => typeof v === "string");
 
   const lines: CargoLineInput[] = [];
   for (let i = 0; i < rawLines.length; i++) {
+    // [null]·문자열 원소 등은 Array.isArray 를 통과한다 — 원소 단위로도 형식을 검사.
+    if (typeof rawLines[i] !== "object" || rawLines[i] === null) {
+      return { error: "화물 payload 형식이 잘못됐습니다. 화면을 새로고침한 뒤 다시 시도하세요." };
+    }
     const l = rawLines[i] as Record<string, unknown>;
     const qty = numOrNull(String(l.qty ?? ""));
     if (qty === null || Number.isNaN(qty) || qty <= 0) {
@@ -79,6 +86,10 @@ export async function saveShipmentCargoAction(
     const cbm = numOrNull(String(l.cbm ?? ""));
     if ([pkg, wt, cbm].some((n) => n !== null && (Number.isNaN(n) || n < 0))) {
       return { error: `포장수·중량·CBM 은 0 이상의 숫자여야 합니다. (${i + 1}번째 줄)` };
+    }
+    // 포장수는 DB 가 integer — 소수를 흘리면 영문 원문 캐스트 에러가 뜬다.
+    if (pkg !== null && !Number.isInteger(pkg)) {
+      return { error: `포장 수는 정수여야 합니다. (${i + 1}번째 줄, 받은 값: ${l.packageCount})` };
     }
     // uom 은 보내지 않는다 — 서비스가 주문 라인→품목 마스터에서 해석한다(P4.3f).
     lines.push({
@@ -96,7 +107,11 @@ export async function saveShipmentCargoAction(
   }
 
   const parties: ShipmentPartyInput[] = [];
-  for (const p of rawParties as Record<string, unknown>[]) {
+  for (const raw of rawParties) {
+    if (typeof raw !== "object" || raw === null) {
+      return { error: "화물 payload 형식이 잘못됐습니다. 화면을 새로고침한 뒤 다시 시도하세요." };
+    }
+    const p = raw as Record<string, unknown>;
     const role =
       p.role === "shipper" || p.role === "consignee" || p.role === "notify"
         ? p.role
@@ -119,6 +134,7 @@ export async function saveShipmentCargoAction(
       lines,
       parties,
       shippingMarks: str(formData.get("shippingMarks")),
+      knownLineIds,
     });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "화물 내역 저장에 실패했습니다." };
@@ -130,10 +146,14 @@ export async function saveShipmentCargoAction(
   revalidatePath("/sales-orders");
   revalidatePath("/purchase-orders");
 
-  const saved = await getShipmentCargo(shipmentId);
-  return {
-    ok: "화물 내역이 저장되었습니다.",
-    saved,
-    savedAt: Date.now(),
-  };
+  // 저장은 이미 성공했다 — 동기화용 재조회가 실패해도 크래시 대신 안내로.
+  try {
+    const saved = await getShipmentCargo(shipmentId);
+    return { ok: "화물 내역이 저장되었습니다.", saved, savedAt: Date.now() };
+  } catch {
+    return {
+      ok: "화물 내역이 저장되었습니다. (화면 동기화 조회에 실패했습니다 — 새로고침해 주세요)",
+      savedAt: Date.now(),
+    };
+  }
 }

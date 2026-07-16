@@ -44,6 +44,9 @@ export default async function ShipmentPrintPage({
   const pkgTotals = packageTotalsByType(cargo.lines);
   const totalGw = sumFinite(cargo.lines.map((l) => l.grossWeightKg));
   const totalCbm = sumFinite(cargo.lines.map((l) => l.cbm));
+  // 0 도 유효한 합계다("미기재"와 다르다) — 값이 하나라도 있으면 합계를 찍는다.
+  const hasGw = cargo.lines.some((l) => l.grossWeightKg != null);
+  const hasCbm = cargo.lines.some((l) => l.cbm != null);
   const qtyTotalLabel = qtyTotals.map((t) => `${t.qty} ${t.uom}`).join(" · ");
   const pkgTotalLabel = pkgTotals
     .map((t) => `${t.count} ${t.packageType}`)
@@ -163,8 +166,12 @@ export default async function ShipmentPrintPage({
             {cargo.lines.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-6 text-center text-zinc-400">
-                  화물 내역이 없습니다 — 선적 화면의 &lsquo;화물 내역·당사자&rsquo;에서
-                  입력하세요.
+                  {/* 대외 서류에 앱 화면 안내를 찍지 않는다 — 화면에서만 보인다 */}
+                  —{" "}
+                  <span className="no-print">
+                    (화물 내역이 없습니다 — 선적 화면의 &lsquo;화물 내역·당사자&rsquo;에서
+                    입력하세요)
+                  </span>
                 </td>
               </tr>
             ) : (
@@ -208,12 +215,12 @@ export default async function ShipmentPrintPage({
                 <td className="py-2 pr-2 text-right tabular-nums">
                   {pkgTotalLabel || "-"}
                 </td>
-                {/* 중량·CBM 은 고정 단위 — 단일 합계. */}
+                {/* 중량·CBM 은 고정 단위 — 단일 합계. 0 은 '-' 가 아니라 0 으로. */}
                 <td className="py-2 pr-2 text-right tabular-nums">
-                  {totalGw || "-"}
+                  {hasGw ? totalGw : "-"}
                 </td>
                 <td className="py-2 pr-2 text-right tabular-nums">
-                  {totalCbm || "-"}
+                  {hasCbm ? totalCbm : "-"}
                 </td>
               </tr>
             </tfoot>

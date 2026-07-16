@@ -75,6 +75,17 @@ function num(v: number | string | null): number {
   return typeof v === "number" ? v : Number(v);
 }
 
+/** PostgREST 기본 상한(1000행)은 **경고 없이 자른다**(P4.1f 확증 함정) — 페이지 크기. */
+const PAGE = 1000;
+/** .in() id 목록은 URL 로 나간다 — 길면 요청 자체가 깨지므로 잘라 보낸다. */
+const IN_CHUNK = 150;
+
+function chunks<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 function numOrNull(v: number | string | null): number | null {
   if (v === null) return null;
   return typeof v === "number" ? v : Number(v);
@@ -200,23 +211,31 @@ export async function listShippableOrderLines(
       .filter((l) => l.order_type === orderType)
       .map((l) => l.order_id);
     if (ids.length === 0) return;
-    const { data, error } = await supabase
-      .from(table)
-      .select(`id, ${docColumn}, product_id, product_name, unit, quantity, sort_order`)
-      .in(docColumn, ids)
-      .order("sort_order", { ascending: true, nullsFirst: false });
-    if (error) throw new Error(`주문 라인 조회 실패: ${error.message}`);
-    for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
-      rows.push({
-        id: r.id as string,
-        doc_id: r[docColumn] as string,
-        product_id: (r.product_id as string | null) ?? null,
-        product_name: (r.product_name as string | null) ?? null,
-        unit: (r.unit as string | null) ?? null,
-        quantity: (r.quantity as number | string | null) ?? null,
-        sort_order: (r.sort_order as number | null) ?? null,
-        orderType,
-      });
+    // ⚠️ 상한 없이 부르면 1000행에서 말없이 잘린다 — 잘린 잔량은 초과 경고를 죽이고
+    //    lockedOrderKeys 를 빈약하게 만든다(가드 구멍). 전량 페이징(P4.1f 규칙).
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(`id, ${docColumn}, product_id, product_name, unit, quantity, sort_order`)
+        .in(docColumn, ids)
+        .order("sort_order", { ascending: true, nullsFirst: false })
+        .order("id", { ascending: true }) // 전순서 타이브레이커 — 경계 중복·누락 방지
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`주문 라인 조회 실패: ${error.message}`);
+      const batch = (data ?? []) as unknown as Record<string, unknown>[];
+      for (const r of batch) {
+        rows.push({
+          id: r.id as string,
+          doc_id: r[docColumn] as string,
+          product_id: (r.product_id as string | null) ?? null,
+          product_name: (r.product_name as string | null) ?? null,
+          unit: (r.unit as string | null) ?? null,
+          quantity: (r.quantity as number | string | null) ?? null,
+          sort_order: (r.sort_order as number | null) ?? null,
+          orderType,
+        });
+      }
+      if (batch.length < PAGE) break;
     }
   }
   await loadOrderLines("so_lines", "so_id", "SO");
@@ -224,18 +243,20 @@ export async function listShippableOrderLines(
   if (rows.length === 0) return [];
 
   // 기선적 수량 — 뷰(살아있는 선적만). 이 선적뿐 아니라 **전 선적**의 소비가 잔량을 줄인다.
-  const { data: totals, error: totErr } = await supabase
-    .from("shipment_line_totals")
-    .select("order_type, order_line_id, shipped_qty")
-    .in("order_line_id", rows.map((r) => r.id));
-  if (totErr) throw new Error(`선적 잔량 조회 실패: ${totErr.message}`);
   const shipped = new Map<string, number>();
-  for (const t of (totals ?? []) as unknown as {
-    order_type: string;
-    order_line_id: string;
-    shipped_qty: number | string;
-  }[]) {
-    shipped.set(`${t.order_type}|${t.order_line_id}`, num(t.shipped_qty));
+  for (const idChunk of chunks(rows.map((r) => r.id), IN_CHUNK)) {
+    const { data: totals, error: totErr } = await supabase
+      .from("shipment_line_totals")
+      .select("order_type, order_line_id, shipped_qty")
+      .in("order_line_id", idChunk);
+    if (totErr) throw new Error(`선적 잔량 조회 실패: ${totErr.message}`);
+    for (const t of (totals ?? []) as unknown as {
+      order_type: string;
+      order_line_id: string;
+      shipped_qty: number | string;
+    }[]) {
+      shipped.set(`${t.order_type}|${t.order_line_id}`, num(t.shipped_qty));
+    }
   }
 
   // 표시 단위 해석 — 저장 경로와 같은 순수 규칙(P4.3f)이라 폼 표시 == 저장 결과.
@@ -282,21 +303,33 @@ async function countLiveShipmentLines(
   orderType: "SO" | "PO",
 ): Promise<number> {
   const supabase = createSupabaseServerClient();
-  const { data: lineIds, error: lineErr } = await supabase
-    .from(table)
-    .select("id")
-    .eq(docColumn, docId);
-  if (lineErr) throw new Error(`주문 라인 조회 실패: ${lineErr.message}`);
-  const ids = ((lineIds ?? []) as unknown as { id: string }[]).map((r) => r.id);
+  // ⚠️ 잠금 판정이 잘리면 **폼이 열렸다가 DB 트리거의 날 예외**를 맞는다 — 전량 페이징.
+  const ids: string[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("id")
+      .eq(docColumn, docId)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`주문 라인 조회 실패: ${error.message}`);
+    const batch = (data ?? []) as unknown as { id: string }[];
+    ids.push(...batch.map((r) => r.id));
+    if (batch.length < PAGE) break;
+  }
   if (ids.length === 0) return 0;
 
-  const { count, error } = await supabase
-    .from("shipment_line_totals")
-    .select("order_line_id", { count: "exact", head: true })
-    .eq("order_type", orderType)
-    .in("order_line_id", ids);
-  if (error) throw new Error(`선적 참조 조회 실패: ${error.message}`);
-  return count ?? 0;
+  let total = 0;
+  for (const idChunk of chunks(ids, IN_CHUNK)) {
+    const { count, error } = await supabase
+      .from("shipment_line_totals")
+      .select("order_line_id", { count: "exact", head: true })
+      .eq("order_type", orderType)
+      .in("order_line_id", idChunk);
+    if (error) throw new Error(`선적 참조 조회 실패: ${error.message}`);
+    total += count ?? 0;
+  }
+  return total;
 }
 
 /* ---------- 저장 ---------- */
@@ -333,9 +366,32 @@ export async function saveShipmentCargo(input: {
   lines: CargoLineInput[];
   parties: ShipmentPartyInput[];
   shippingMarks: string | null;
+  /** 클라이언트가 화면에 갖고 있던 저장 라인 id — 동시성 베이스라인(아래 검사). */
+  knownLineIds: string[];
 }): Promise<{ lineCount: number; partyCount: number }> {
   const supabase = createSupabaseServerClient();
-  const uoms = await resolveShipmentCargoUoms({
+
+  // ★ 동시성 베이스라인 — diff-upsert 의 DELETE 는 "payload 에 없는 행"을 지운다.
+  //   다른 화면(탭)이 그 사이 추가한 행은 이 화면의 payload 에 없으므로, 대조 없이
+  //   저장하면 **경고 없이 삭제**된다. 화면이 알던 id 집합과 DB 를 대조해 어긋나면
+  //   멈춘다 — 잃는 건 클릭 한 번, 지키는 건 다른 화면의 데이터.
+  const { data: curRows, error: curErr } = await supabase
+    .from("shipment_lines")
+    .select("id")
+    .eq("shipment_id", input.shipmentId);
+  if (curErr) throw new Error(`화물 라인 조회 실패: ${curErr.message}`);
+  const known = new Set(input.knownLineIds);
+  const foreign = ((curRows ?? []) as unknown as { id: string }[]).filter(
+    (r) => !known.has(r.id),
+  );
+  if (foreign.length > 0) {
+    throw new Error(
+      `다른 화면에서 화물 내역이 변경되었습니다(이 화면이 모르는 라인 ${foreign.length}건). ` +
+        `화면을 새로고침해 최신 내역을 확인한 뒤 다시 저장하세요.`,
+    );
+  }
+
+  const resolutions = await resolveShipmentCargoUoms({
     shipmentId: input.shipmentId,
     lineRefs: input.lines.map((l) => ({
       orderType: l.orderType,
@@ -343,6 +399,26 @@ export async function saveShipmentCargo(input: {
       itemName: l.itemName,
     })),
   });
+
+  // 연결 오류가 단위 오류보다 먼저다 — RPC 는 uom 검사가 연결 검사보다 앞서 있어
+  // 여기서 정확한 원인을 말하지 않으면 "단위를 알 수 없어…" 오진이 뜬다.
+  const notLinkedIdx = resolutions.findIndex((r) => !r.linked);
+  if (notLinkedIdx >= 0) {
+    throw new Error(
+      `이 선적에 연결되지 않은 주문의 라인이 있습니다: ${
+        input.lines[notLinkedIdx].itemName ?? "(이름 없음)"
+      } — 위 폼에서 주문 연결을 확인하고 화면을 새로고침한 뒤 다시 시도하세요.`,
+    );
+  }
+  const noUomIdx = resolutions.findIndex((r) => r.linked && r.uom === null);
+  if (noUomIdx >= 0) {
+    throw new Error(
+      `단위를 알 수 없어 저장할 수 없습니다: ${
+        input.lines[noUomIdx].itemName ?? "(이름 없음)"
+      } — 주문 라인과 품목 마스터 어디에도 단위가 없습니다. 품목 마스터에서 단위를 입력한 뒤 다시 시도하세요.`,
+    );
+  }
+  const uoms = resolutions.map((r) => r.uom);
 
   const { data, error } = await supabase.rpc("save_shipment_cargo", {
     p_shipment_id: input.shipmentId,

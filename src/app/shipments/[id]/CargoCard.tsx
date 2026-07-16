@@ -38,7 +38,8 @@ interface CargoRow {
   orderType: "SO" | "PO";
   orderLineId: string;
   itemName: string;
-  uomDisplay: string; // 표시용 — 저장 시 서비스가 같은 체인으로 재해석
+  uomDisplay: string; // 지금 해석된 단위 — 저장 시 서비스가 같은 체인으로 재해석
+  uomSaved?: string; // 저장 스냅샷 — 지금 해석과 다르면 "저장 시 변경" 경고 표시
   qty: string;
   packageCount: string;
   packageType: string;
@@ -79,27 +80,33 @@ export function CargoCard({
 
   function toRows(lines: ShipmentCargoLine[]): CargoRow[] {
     // 렌더 중 ref 접근 금지(react-hooks/refs) — 저장 행은 id 가 유일하니 그대로 키로.
-    return lines.map((l) => ({
-      key: `cg-${l.id}`,
-      id: l.id,
-      orderType: l.orderType,
-      orderLineId: l.orderLineId ?? "",
-      itemName: l.itemName,
-      uomDisplay: l.uom,
-      qty: String(l.qty),
-      packageCount: l.packageCount != null ? String(l.packageCount) : "",
-      packageType: l.packageType ?? "",
-      grossWeightKg: l.grossWeightKg != null ? String(l.grossWeightKg) : "",
-      cbm: l.cbm != null ? String(l.cbm) : "",
-      memo: l.memo ?? "",
-    }));
+    return lines.map((l) => {
+      // ★ 표시 단위는 "지금 다시 해석한 값"(불러오기 목록과 같은 원천) — 저장이 매번
+      //   재해석하므로 저장 스냅샷을 그대로 보여주면 마스터 정정 후 화면과 저장 결과가
+      //   어긋난다(폼 표시 == 저장 결과 불변식).
+      const resolvedNow =
+        (l.orderLineId ? byLineId.get(l.orderLineId)?.uom : null) ?? l.uom;
+      return {
+        key: `cg-${l.id}`,
+        id: l.id,
+        orderType: l.orderType,
+        orderLineId: l.orderLineId ?? "",
+        itemName: l.itemName,
+        uomDisplay: resolvedNow,
+        uomSaved: l.uom,
+        qty: String(l.qty),
+        packageCount: l.packageCount != null ? String(l.packageCount) : "",
+        packageType: l.packageType ?? "",
+        grossWeightKg: l.grossWeightKg != null ? String(l.grossWeightKg) : "",
+        cbm: l.cbm != null ? String(l.cbm) : "",
+        memo: l.memo ?? "",
+      };
+    });
   }
 
-  function toParties(saved: ShipmentParty[]): ShipmentPartyDraft[] {
-    if (saved.length === 0) {
-      return defaultShipmentParties({ direction, seller, partner });
-    }
-    // 저장된 스냅샷 우선, 없는 역할만 빈 블록(강요하지 않는다 — 이름 비우면 저장 안 됨)
+  // 저장된 스냅샷 그대로 — 없는 역할은 **빈 블록**(비운 것을 존중한다. 기본값을 다시
+  // 채워 넣으면 "당사자 삭제"가 다음 저장에서 조용히 부활한다).
+  function toPartiesStrict(saved: ShipmentParty[]): ShipmentPartyDraft[] {
     const bySaved = new Map(saved.map((p) => [p.role, p]));
     return (["shipper", "consignee", "notify"] as ShipmentPartyRole[]).map(
       (role) => {
@@ -119,19 +126,24 @@ export function CargoCard({
 
   const [rows, setRows] = useState<CargoRow[]>(() => toRows(initialLines));
   const [parties, setParties] = useState<ShipmentPartyDraft[]>(() =>
-    toParties(initialParties),
+    // 기본값 프리필은 "아무것도 저장된 적 없는" 신선한 화물에서만 — 라인은 있는데
+    // 당사자가 0이면 사용자가 지운 것일 수 있으므로 빈 블록을 존중한다.
+    initialParties.length === 0 && initialLines.length === 0
+      ? defaultShipmentParties({ direction, seller, partner })
+      : toPartiesStrict(initialParties),
   );
   const [marks, setMarks] = useState(initialMarks ?? "");
   // 저장된 정본(라인 id 세트)의 기준 — diff 미리보기·초과 계산의 축.
   const [savedLines, setSavedLines] = useState<ShipmentCargoLine[]>(initialLines);
 
   // 저장 성공 → 서버 정본으로 동기화(새 행이 id 를 받아 다음 저장에서 중복 INSERT 방지).
+  // 동기화는 strict — 기본값을 다시 채우지 않는다(비운 당사자의 부활 방지).
   const lastSync = useRef<number>(0);
   useEffect(() => {
     if (state.saved && state.savedAt && state.savedAt !== lastSync.current) {
       lastSync.current = state.savedAt;
       setRows(toRows(state.saved.lines));
-      setParties(toParties(state.saved.parties));
+      setParties(toPartiesStrict(state.saved.parties));
       setMarks(state.saved.shippingMarks ?? "");
       setSavedLines(state.saved.lines);
     }
@@ -201,9 +213,16 @@ export function CargoCard({
     );
   const overLineIds = new Set(overLines.map((o) => o.lineId));
 
+  // payload 에는 수량이 유효한 행만 실린다 — diff 계획도 **같은 집합**으로 계산해야
+  // "수량을 지운 저장 행"이 무경고 삭제되지 않는다(빠진 행 = 삭제 예정으로 집계돼
+  // 아래 confirm 에 잡힌다).
+  const payloadRows = rows.filter((r) => {
+    const q = Number((r.qty || "").replace(/,/g, ""));
+    return Number.isFinite(q) && q > 0;
+  });
   const plan = planCargoLineDiff(
     savedLines.map((l) => l.id),
-    rows.map((r) => ({ id: r.id })),
+    payloadRows.map((r) => ({ id: r.id })),
   );
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -228,25 +247,23 @@ export function CargoCard({
 
   /* ---------- payload ---------- */
   const linesPayload = JSON.stringify(
-    rows
-      .filter((r) => {
-        const q = Number((r.qty || "").replace(/,/g, ""));
-        return Number.isFinite(q) && q > 0;
-      })
-      .map((r) => ({
-        id: r.id,
-        orderType: r.orderType,
-        orderLineId: r.orderLineId,
-        itemName: r.itemName,
-        qty: r.qty,
-        packageCount: r.packageCount,
-        packageType: r.packageType,
-        grossWeightKg: r.grossWeightKg,
-        cbm: r.cbm,
-        memo: r.memo,
-      })),
+    payloadRows.map((r) => ({
+      id: r.id,
+      orderType: r.orderType,
+      orderLineId: r.orderLineId,
+      itemName: r.itemName,
+      qty: r.qty,
+      packageCount: r.packageCount,
+      packageType: r.packageType,
+      grossWeightKg: r.grossWeightKg,
+      cbm: r.cbm,
+      memo: r.memo,
+    })),
   );
   const partiesPayload = JSON.stringify(parties);
+  // 동시성 베이스라인 — 이 화면이 알고 있는 저장 라인 id. 서비스가 DB 와 대조해
+  // 다른 화면이 추가한 라인을 diff-DELETE 가 지우지 않도록 막는다.
+  const knownIdsPayload = JSON.stringify(savedLines.map((l) => l.id));
 
   /* ---------- 불러오기 목록: 주문별 그룹 ---------- */
   const orderGroups = new Map<string, ShippableOrderLine[]>();
@@ -300,10 +317,13 @@ export function CargoCard({
         </p>
       </div>
 
-      <form action={formAction} onSubmit={onSubmit} className="space-y-4">
+      <form action={formAction} onSubmit={onSubmit}>
+        {/* 저장 중 입력 잠금 — 대기 창에 친 키가 동기화(setRows)로 증발하는 것을 막는다 */}
+        <fieldset disabled={pending} className="m-0 border-0 p-0 space-y-4">
         <input type="hidden" name="shipmentId" value={shipmentId} />
         <input type="hidden" name="lines" value={linesPayload} />
         <input type="hidden" name="parties" value={partiesPayload} />
+        <input type="hidden" name="knownLineIds" value={knownIdsPayload} />
 
         {state.error && (
           <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -421,7 +441,17 @@ export function CargoCard({
                           }`}
                         />
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">{r.uomDisplay}</td>
+                      <td className="px-3 py-2 text-xs text-slate-600">
+                        {r.uomDisplay}
+                        {r.uomSaved && r.uomSaved !== r.uomDisplay && (
+                          <div
+                            className="text-[10px] text-amber-700"
+                            title="주문 라인/품목 마스터의 단위가 저장 이후 바뀌었습니다. 저장하면 새 단위로 기록됩니다."
+                          >
+                            저장분 {r.uomSaved} → {r.uomDisplay}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <input
                           value={r.packageCount}
@@ -581,6 +611,7 @@ export function CargoCard({
             않음 — P4.3e 규칙).
           </span>
         </div>
+        </fieldset>
       </form>
     </section>
   );

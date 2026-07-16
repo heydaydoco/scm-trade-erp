@@ -23,6 +23,12 @@ import { listItemUnits } from "./items";
  * 스코프한다. 스코프 밖 라인은 null 양보 — RPC 가 '연결되지 않은 주문의 라인'으로
  * 정확히 거부한다(단위 오류를 지어내지 않는다).
  */
+export interface CargoUomResolution {
+  uom: string | null;
+  /** 이 선적에 연결된 주문의 실존 라인인가 — false 면 단위 이전에 연결 문제다. */
+  linked: boolean;
+}
+
 export async function resolveShipmentCargoUoms(opts: {
   shipmentId: string;
   lineRefs: {
@@ -30,7 +36,7 @@ export async function resolveShipmentCargoUoms(opts: {
     lineId: string | null;
     itemName: string | null;
   }[];
-}): Promise<(string | null)[]> {
+}): Promise<CargoUomResolution[]> {
   const supabase = createSupabaseServerClient();
 
   const { data: links, error: linkErr } = await supabase
@@ -88,13 +94,16 @@ export async function resolveShipmentCargoUoms(opts: {
   }
   const masterUnits = await listItemUnits(needMaster);
 
-  return opts.lineRefs.map((r) =>
-    resolveDocLineUom(
-      r.lineId ? rowById.get(r.lineId) : undefined,
-      masterUnits,
-      r.itemName,
-    ),
-  );
+  // linked 를 함께 돌려준다 — 화물 RPC 는 uom 검사가 연결 검사보다 **앞서** 있어,
+  // 스코프 밖 라인을 null 로만 넘기면 "단위를 알 수 없어…"라는 오진 메시지가 뜬다
+  // (GR/DLV 와 달리 여기선 서비스가 연결 오류를 먼저 한국어로 말해야 한다).
+  return opts.lineRefs.map((r) => {
+    const row = r.lineId ? rowById.get(r.lineId) : undefined;
+    return {
+      uom: resolveDocLineUom(row, masterUnits, r.itemName),
+      linked: row !== undefined,
+    };
+  });
 }
 
 export async function resolveDocLineUoms(opts: {
