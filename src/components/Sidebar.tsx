@@ -28,6 +28,13 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
     items: [{ href: "/shipments", label: "선적" }],
   },
   {
+    section: "재고",
+    items: [
+      { href: "/stock", label: "현재고" },
+      { href: "/stock/movements", label: "재고 원장" },
+    ],
+  },
+  {
     section: "재무",
     items: [{ href: "/fx-rates", label: "환율 대장" }],
   },
