@@ -673,3 +673,50 @@ export interface GoodsReceipt {
   createdAt: string;
   lines: GrLine[];
 }
+
+/* ---------- P4.4 선적 화물 · 당사자 스냅샷 ---------- */
+
+/**
+ * 선적 화물 라인 — **물류 전표**라 원장 전기 없음, item 은 소프트(자유텍스트 허용).
+ * order_line_id 소프트 포인터가 잔량·가드의 축이다(원칙 1·5).
+ */
+export interface ShipmentCargoLine {
+  id: string;
+  orderType: "SO" | "PO";
+  orderLineId: string | null;
+  itemId: string | null;
+  itemName: string; // 스냅샷
+  qty: number;
+  uom: string; // 스냅샷 — P4.3f 체인(라인→마스터→거부)으로 해석된 값
+  packageCount: number | null;
+  packageType: string | null;
+  grossWeightKg: number | null;
+  cbm: number | null;
+  memo: string | null;
+}
+
+/** 선적 당사자 스냅샷 — 인쇄(S/I)는 이것만 본다(마스터 소급 변경 차단). */
+export interface ShipmentParty {
+  role: "shipper" | "consignee" | "notify";
+  companyId: string | null; // 출처 기록용 소프트 포인터
+  name: string;
+  address: string | null;
+  contact: string | null;
+}
+
+/**
+ * 주문라인별 선적 가능 잔량 — 뷰 shipment_line_totals 기반 계산(원칙 1).
+ * uom 은 해석된 단위(라인→마스터), null = 단위 불명 → 폼이 그 줄을 잠근다(P4.3f).
+ */
+export interface ShippableOrderLine {
+  orderType: "SO" | "PO";
+  orderId: string;
+  orderNumber: string | null; // shipment_orders 스냅샷
+  orderLineId: string;
+  productId: string | null;
+  itemName: string | null;
+  uom: string | null;
+  orderedQty: number;
+  shippedQty: number; // 살아있는 선적 라인 합(전 선적 대상)
+  openQty: number; // 음수 = 초과 선적(차단 아님, 원칙 8)
+}

@@ -131,6 +131,13 @@ export const SHIPMENT_DIRECTION: Code[] = [
   { code: "import", label: "수입 (Import)" },
 ];
 
+/** 선적 당사자 역할 (P4.4, 원칙 4 코드테이블) — shipment_parties.role 실제 값. */
+export const SHIPMENT_PARTY_ROLES: Code[] = [
+  { code: "shipper", label: "Shipper (송하인)" },
+  { code: "consignee", label: "Consignee (수하인)" },
+  { code: "notify", label: "Notify Party (통지처)" },
+];
+
 /** 마일스톤 유형 (P3.2, 원칙 4 코드테이블) — 기일엔진(P3.3) 원천. 해상·항공·수출입 공용. */
 export const MILESTONE_TYPES: Code[] = [
   { code: "doc_cutoff", label: "서류마감 (S/I Cut-off)" },
