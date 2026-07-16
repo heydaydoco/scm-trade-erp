@@ -237,8 +237,12 @@ export default async function StockMovementsPage({
                         movementId={r.id}
                         summary={`${t.label} ${r.qty > 0 ? "+" : ""}${r.qty}`}
                       />
-                    ) : r.refDocType && REF_HREF[r.refDocType] && r.refDocId ? (
+                    ) : r.movementType !== "REVERSAL" &&
+                      r.refDocType &&
+                      REF_HREF[r.refDocType] &&
+                      r.refDocId ? (
                       // 전표 발생분 — 버튼만 없애면 사용자가 길을 잃는다. 갈 곳을 알려준다.
+                      // (역분개 행 자체는 이미 취소의 결과이므로 링크를 걸지 않는다)
                       <Link
                         href={`${REF_HREF[r.refDocType]}/${r.refDocId}`}
                         className="text-xs text-slate-500 underline"

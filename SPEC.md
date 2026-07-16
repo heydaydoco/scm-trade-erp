@@ -194,7 +194,7 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - C2. RFQ(견적요청) / 복수 벤더 견적 비교 `[P7]`
 - C3. 발주 (Purchase Order, 헤더-라인) ✅ *구현(P3.1 — save_purchase_order 원자 저장·수주 참조생성(back-to-back)·환율 프리필·발주서 인쇄·감사 상속)* `[P3]`
 - C4. 발주 확인(Order Confirmation) 접수 — 상태값(공급사확정)으로 반영, 별도 접수 화면은 후속 `[P3]`
-- C5. 입고 (Goods Receipt, PO 참조 생성, 부분입고, 재고 가산) `[P4]`
+- C5. 입고 (Goods Receipt, PO 참조 생성, 부분입고, 재고 가산) ✅ *구현(P4.2 — 발주 참조생성·`GR_IN` 원장 전기·잔량 뷰·부분입고·상태 자동전환·취소=역분개·잔량 소비 가드)* `[P4]`
 - C6. 입고 검수(QC) / 검사성적서 `[P5]`
 - C7. 송장 검수 (Invoice Receipt, 3-way match: PO↔GR↔Invoice) `[P8]`
 - C8. 미지급금(AP) / 지급 관리 `[P8]`
@@ -414,7 +414,12 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   - ✅ **P4.1 재고 원장 기반 완료 = D1·D2·D3** (2026-07-16, 라이브 검증됨) — **현재고라는 숫자를 어디에도 저장하지 않는다**(원칙 1). `stock_movements` 추가전용 원장에 부호 있는 행만 쌓고 현재고 = `SUM(qty)`(뷰 `stock_on_hand`, 품목×창고×**단위**별). 정정은 UPDATE가 아니라 **역분개**(반대부호 행) — 기존 `save_*`의 "라인 전량 DELETE 후 재작성" 패턴은 원장에 **절대 금지**. 쓰기 경로는 SECURITY DEFINER RPC 2종(`save_stock_adjustment`·`reverse_stock_movement`)뿐이고 **앱에는 INSERT 권한조차 없다**. 이중 역분개는 RPC 검사 + `reversal_of_id` UNIQUE 부분 인덱스로 2중 차단(레이스 포함). 유형 6종을 선제 정의(P4.2 `GR_IN`·P4.3 `DLV_OUT` 포함 — 나중에 CHECK를 고치면 그 사이 행이 흔들린다). 마이너스는 **차단이 아니라 경고 후 허용**(원칙 8) — 저장 전 예상재고 표시 + 확인창 + 홈 배지. 화면: `/stock`(현재고·조정)·`/stock/movements`(원장·역분개). 테스트 42개. 다중에이전트 적대검증(4관점→지적별 반박) 9건 중 5건 기각·**실결함 3건 교정**(NaN이 `p_qty<=0`을 통과해 현재고가 영구 NaN·역분개로도 복구불가 / 뷰가 원장 단위 스냅샷 대신 현재 마스터 단위를 써서 `100 PCS + (−10 KG) = 90 KG` 거짓합산 / 무제한 조회 1000행 절단으로 마이너스 경고 사망). (마이그레이션: `p4.1_stock_ledger.sql` + `p4.1f_review_fixes.sql`, 오너 실행·검증 완료)
   - 🔑 **Supabase 기본권한 함정 (전 단계 소급 적용)** — Supabase는 `public` 스키마에 `alter default privileges … grant all on tables to anon, authenticated`를 걸어둔다. **새 테이블은 만들자마자 `anon`이 전권을 갖는다** → "부여하지 않음"으로는 아무것도 못 막고 **명시적 `REVOKE`만 유효**하다. 확증: P2.1은 `grant select on audit_log`만 했는데 라이브에서 `insert_가능=true`였다. 따라서 **P2.3 `fx_rates`의 "UPDATE/DELETE 미부여로 불변 강제" 주장은 실제로 깨져 있었고**, P4.1에서 `fx_rates`·`audit_log`와 함께 봉인했다. → 앞으로 불변을 주장하는 객체는 반드시 `revoke`.
   - 🔑 **봉인 검증법** — `update … set`을 직접 쳐보는 방식으로는 검증할 수 없다. Supabase SQL Editor는 **테이블 소유자 `postgres`로 실행**되어 권한 검사를 통째로 우회하므로 봉인이 완벽해도 성공한다. `has_table_privilege('anon', …)`로 실효 권한을 직접 물어야 한다(역할 상속·PUBLIC 부여까지 계산). → `scripts/verify_seal.sql`.
-  - **다음: P4.2 입고(GR)** — 발주→참조생성, `GR_IN` 원장 전기, PO 잔량·부분입고·상태 자동전환, 취소=역분개.
+  - ✅ **P4.2 입고(GR) 완료 = C5** (2026-07-16, 라이브 검증됨) — **발주 참조 생성 전용**(원칙 3 — 발주 없는 단독 입고 경로를 만들지 않았다. 재고 증가는 반드시 선행 전표를 갖는다). `goods_receipts`/`gr_lines` + `save_goods_receipt`(원자: 헤더+라인+`GR_IN` 원장 전기가 **한 트랜잭션** → 입고만 남거나 원장만 남는 상태가 없다) + `cancel_goods_receipt`(삭제가 아니라 status + **원장 역분개**). **부분입고 = 같은 발주에 GR 여러 건**(라인 분할이 아니다). 잔량 뷰 `po_open_qty`/`po_open_summary` — **잔량은 컬럼이 아니라 계산**(`received_qty`를 `po_lines`에 저장하지 않는다, 원칙 1). 초과입고는 **차단이 아니라 경고 후 허용**(원칙 8과 같은 결 — 공급사가 더 보내는 실무가 있고 막으면 입고 자체를 못 친다). 자유텍스트 품목(`po_lines.product_id` null)은 입고 거부(원장은 등록 품목만 받는다). 봉인: 앱엔 `select`만, 쓰기는 RPC로만. **`audit_log` insert 회수**(P2.1의 "위조 불가" 주장이 Supabase 기본권한 때문에 실제로 깨져 있던 것을 닫음).
+    - **발주 상태 자동전환** — 잔량 0=`completed` / 일부=`partial`(**기계 전용 상태**, 폼 선택지에 노출 안 함) / 입고 0=복귀. `purchase_orders.status`에 CHECK가 없어 `partial` 신설이 잠긴 테이블을 안 건드린다. 전이는 **RPC 내부에서만**, 매번 살아있는 GR로 재계산(누적 델타 금지).
+    - **세대(generation) 도장** — 복귀할 "원상태"를 저장할 곳이 없었다(`purchase_orders`는 잠긴 테이블이라 컬럼 추가 불가). → 살아있는 GR이 0건일 때 생성되는 GR만 `goods_receipts.po_status_before`에 발주 상태를 기록하고, 복귀 시 **"도장이 있는 GR 중 가장 최근"** 것을 쓴다. ⚠️ "가장 이른 GR"은 다세대에서 틀린다 — GR#1(confirmed)·#2 → 전량취소 → 발주를 sent로 수정 → GR#3 → #3 취소 시 정답은 sent인데 confirmed로 잘못 복귀한다.
+    - 다중에이전트 적대검증(5관점→지적별 반박) 12건 중 6건 기각·**실결함 4건 교정**(p4.2f): 🔴 **교착** — 입고가 만든 `GR_IN`에 원장 화면의 [역분개] 버튼이 그대로 떠서, 누르면 입고는 살아있는 채 재고만 빠지고 그 뒤 [입고 취소]가 "이미 역분개된 행"으로 롤백 → **입고 영구 취소 불가 + 발주 영구 잠김**(앱 내 복구 경로 0). → **전표가 만든 원장 행은 원장에서 직접 되돌릴 수 없게** 하고(불리언 플래그는 안 씀 — anon이 그냥 true로 넘기면 우회된다), 취소를 **멱등**하게 만들어 이미 갇힌 데이터도 스스로 풀리게 했다. / 클라이언트 `itemId`를 신뢰해 **볼트를 발주하고 너트를 입고**해도 통과하던 것(→ 품목을 발주 라인에서 가져온다) / `poLineId` 없는 유령 입고 / 세대 도장 stale 스냅샷(→ 발주 행 `for update`).
+    - 라이브 검증(Playwright 자동화): 잔량 10→입고 4→잔량 6·`부분입고`→잠금(수정 폼 사라짐)→입고 6→`완료`→초과입고 99 확인창 후 허용→원장에 [역분개] 버튼 없음·"입고에서 취소" 링크→3건 취소→**재고 209→100 정확히 원복 + 발주 `작성중` 세대 도장 복귀 + 잠금 해제**. 테스트 70개.
+  - **다음: P4.3 출고(Delivery)** — 수주→참조생성, `DLV_OUT`, 마이너스 경고 후 허용, SO 잔량, 거래명세서. P4.2의 `poLineId` 필수·품목 결속·전표 역분개 가드 패턴을 그대로 미러한다.
 - **P5 — 통관 + 로트/시리얼 + 검수 + BOM**: 수출입 통관, 추적성, QC, BOM
 - **P6 — ATP/할당/백오더 + L/C + RMA + 알림엔진**: 공급 제약 처리, 결제, 반품
 - **P7 — RFQ/벤더평가 + FTA + 결재워크플로 + 실사**: 구매 고도화, 원산지, 승인
@@ -438,4 +443,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v2.1 · P0·P1·P2·P3 완료 + **P4.0 정지작업 · P4.1 재고 원장 완료**(2026-07-16) — 전수감사 실결함 4건 교정(발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / SPEC A3 정정) + Vitest 도입(테스트 42) + `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3). 원칙 5에 "잔량 소비 가드" 이행분 명기. 다음: P4.2 입고(GR — 발주 참조생성·`GR_IN` 전기·잔량·부분입고·취소=역분개)*
+*문서 버전: v2.2 · P0~P3 완료 + **P4.0 정지작업 · P4.1 재고 원장 · P4.2 입고(GR) 완료**(2026-07-16) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / Vitest 도입(테스트 70) / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·상태 자동전환·세대 도장·잔량 소비 가드(C5). 원칙 5에 "잔량 소비 가드" 이행분 명기. 다음: P4.3 출고(Delivery — 수주 참조생성·`DLV_OUT`·SO 잔량·거래명세서)*
