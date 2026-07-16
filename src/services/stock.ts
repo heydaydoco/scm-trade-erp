@@ -276,6 +276,8 @@ export async function listStockMovements(opts?: {
   movementType?: string;
   from?: string;
   to?: string;
+  refDocType?: string;
+  refDocId?: string;
   limit?: number;
 }): Promise<StockMovement[]> {
   const supabase = createSupabaseServerClient();
@@ -285,6 +287,10 @@ export async function listStockMovements(opts?: {
   if (opts?.movementType) query = query.eq("movement_type", opts.movementType);
   if (opts?.from) query = query.gte("moved_at", opts.from);
   if (opts?.to) query = query.lte("moved_at", opts.to);
+  // 전표 → 원장 역추적(P4.2 입고 상세). ⚠️ 받아서 JS로 거르면 안 된다 —
+  // limit 밖으로 밀린 행이 "없음"으로 보여 화면이 거짓말을 한다. DB에서 좁힌다.
+  if (opts?.refDocType) query = query.eq("ref_doc_type", opts.refDocType);
+  if (opts?.refDocId) query = query.eq("ref_doc_id", opts.refDocId);
 
   const { data, error } = await query
     .order("moved_at", { ascending: false })
