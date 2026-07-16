@@ -12,7 +12,7 @@ import {
 } from "@/services/codes";
 import { round6 } from "@/services/docFlow";
 import { SELLER } from "@/config/company";
-import { PrintButton } from "./PrintButton";
+import { PrintButton } from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 

@@ -4,7 +4,7 @@ import { getPurchaseOrder } from "@/services/purchaseOrders";
 import { getPartner } from "@/services/partners";
 import { CURRENCY_SYMBOL, INCOTERMS, PAYMENT_TERMS, labelOf } from "@/services/codes";
 import { SELLER } from "@/config/company";
-import { PrintButton } from "./PrintButton";
+import { PrintButton } from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 
