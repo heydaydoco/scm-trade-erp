@@ -140,8 +140,8 @@ from (
 union all
 
 --   audit_log: 앱은 읽기만 → update/delete/truncate 0건이어야.
---   (insert 는 이번 봉인 범위 밖 — fn_audit 이 SECURITY DEFINER 라 회수해도 안전하지만
---    지시에 따라 유지. 아래 ⑤에서 그 사실만 확인한다.)
+--   (insert 는 P4.2 에서 회수했다 → ⓓ 에서 함께 확인. fn_audit 이 SECURITY DEFINER 라
+--    회수해도 트리거 기록은 정상 동작한다.)
 select
   '④-c audit_log 변경권한 잔존',
   case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(role || '/' || priv, ', ') end
@@ -188,7 +188,105 @@ from (
   from public.stock_movements
   group by item_id, warehouse_code
   having count(distinct uom) > 1
-) d;
+) d
+
+union all
+
+-- ── ⑨ 입고 원장 대사 (P4.2) ────────────────────────────────────────────────
+--  살아있는 gr_lines 합 = 그 입고가 만든 GR_IN 원장합(REVERSAL 상쇄 후).
+--  어긋나면 헤더-라인-원장 원자성이 깨졌다는 뜻(RPC 밖에서 손댄 흔적).
+select
+  '⑨ 입고↔원장 대사',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select g.id
+  from public.goods_receipts g
+  left join (
+    select gr_id, sum(qty) as line_sum from public.gr_lines group by gr_id
+  ) l on l.gr_id = g.id
+  left join (
+    -- 이 입고가 만든 GR_IN + 그 GR_IN 을 되돌린 REVERSAL 을 함께 합산 → 순증
+    select m.ref_doc_id as gr_id,
+           sum(m.qty) + coalesce(sum(rv.qty), 0) as ledger_sum
+    from public.stock_movements m
+    left join public.stock_movements rv on rv.reversal_of_id = m.id
+    where m.ref_doc_type = 'goods_receipt' and m.movement_type = 'GR_IN'
+    group by m.ref_doc_id
+  ) v on v.gr_id = g.id
+  where case when g.status = 'cancelled' then 0 else coalesce(l.line_sum, 0) end
+        is distinct from coalesce(v.ledger_sum, 0)
+) d
+
+union all
+
+-- ── ⑩ 발주 잔량 음수 (초과입고) ─────────────────────────────────────────────
+--  ⚠️ 결함이 아니다 — 초과입고는 차단하지 않고 경고 후 허용한다(원칙 8과 같은 결).
+--     다만 실물과 어긋난 신호이므로 목록으로 본다.
+select
+  '⑩ 발주 잔량 음수(초과입고)',
+  case when count(*) = 0 then '정상' else '※ ' || count(*) || '건 (초과입고 — 허용됨)' end
+from public.po_open_qty where open_qty < 0
+
+union all
+
+-- ── ⓐ 살아있는 입고가 있는데 발주 상태가 partial/completed 가 아님 ─────────
+--  상태 전이는 RPC 내부에서만 일어난다. 어긋나면 사람이 손댔거나 전이가 안 돈 것.
+select
+  'ⓐ 입고 있는데 상태 미전이',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.purchase_orders po
+where exists (
+        select 1 from public.goods_receipts g
+         where g.ref_doc_id = po.id and g.status <> 'cancelled')
+  and po.status not in ('partial', 'completed')
+
+union all
+
+-- ── ⓑ 살아있는 입고가 0건인데 상태가 partial ────────────────────────────────
+--  전량 취소 후 복귀가 안 된 것.
+select
+  'ⓑ 입고 0인데 partial',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.purchase_orders po
+where po.status = 'partial'
+  and not exists (
+        select 1 from public.goods_receipts g
+         where g.ref_doc_id = po.id and g.status <> 'cancelled')
+
+union all
+
+-- ── ⓒ 발주별 최초 GR 의 세대 도장이 비어 있음 ───────────────────────────────
+--  세대를 여는 GR 은 반드시 po_status_before 를 남겨야 전량 취소 시 복귀할 수 있다.
+--  비어 있으면 그 발주는 영원히 partial/completed 에 갇힌다.
+select
+  'ⓒ 최초 GR 도장 누락',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select distinct on (ref_doc_id) ref_doc_id, po_status_before
+  from public.goods_receipts
+  order by ref_doc_id, created_at
+) f
+where f.po_status_before is null
+
+union all
+
+-- ── ⓓ 입고 봉인 + audit_log insert 회수 확인 (P4.2) ────────────────────────
+select
+  'ⓓ 입고·감사 쓰기권한 잔존',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(t || '/' || role || '/' || priv, ', ') end
+from (
+  select t.tbl as t, r.role, p.priv
+  from (values ('goods_receipts'),('gr_lines')) as t(tbl)
+  cross join (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
+  where has_table_privilege(r.role, 'public.' || t.tbl, p.priv)
+  union all
+  -- audit_log 는 이제 insert 도 0 이어야 한다(P4.2에서 봉인).
+  select 'audit_log', r.role, p.priv
+  from (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE')) as p(priv)
+  where has_table_privilege(r.role, 'public.audit_log', p.priv)
+) x;
 
 -- ⬆ 이 판정표가 **파일의 마지막 결과**다 (Supabase SQL Editor 는 여러 문장을 실행해도
 --   마지막 SELECT 의 결과만 Results 에 보여준다 → 합격 판정이 가려지지 않게 맨 뒤에 둔다).
