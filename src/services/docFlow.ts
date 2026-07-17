@@ -100,6 +100,22 @@ export function resolveUomOrThrow(
   return uom;
 }
 
+/**
+ * P4.4h 서버 uom 일치 검사의 **순수 미러** — RPC 는 원천 라인→마스터로 재해석한
+ * 단위와 클라 uom 이 다르면 저장을 거부한다('보낸 단위(…)가 서버 해석 단위(…)와
+ * 다릅니다'). 클라 uom 미제공(공란 포함)은 검사 통과 — 재해석 결과가 그대로 쓰인다.
+ * 앱은 같은 체인(resolveUom)으로 해석해 보내므로 정상 경로에서 충돌하지 않는다
+ * (충돌 = 폼 로드 후 마스터 단위가 바뀐 stale 저장 → 새로고침 안내가 맞다).
+ */
+export function uomConflict(
+  clientUom: string | null | undefined,
+  serverUom: string,
+): boolean {
+  const client = clientUom?.trim();
+  if (!client) return false;
+  return client !== serverUom;
+}
+
 /** 선행전표 라인 한 줄의 단위 판정에 필요한 정보(발주·수주 공용 모양). */
 export interface DocLineUnitInfo {
   unit: string | null;

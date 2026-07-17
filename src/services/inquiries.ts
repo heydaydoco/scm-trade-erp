@@ -62,28 +62,46 @@ export function mapRowToInquiry(row: InquiryRow): Inquiry {
   };
 }
 
-/** 도메인 InquiryInput → inquiries 컬럼 (저장용) */
-function mapInputToRow(input: InquiryInput): Record<string, unknown> {
+/**
+ * save_inquiry RPC 필수값 거부의 **순수 미러** — 폼과 같은 3필수(거래처·품목명·
+ * 접수일)를 DB 왕복 없이 즉시 거부한다. 메시지는 RPC 의 RAISE 와 동일하게 유지.
+ */
+export function inquiryRequiredError(input: {
+  partnerId: string | null;
+  productName: string;
+  inquiryDate: string | null;
+}): string | null {
+  if (!input.partnerId) return "거래처를 선택하세요.";
+  if (input.productName.trim() === "") return "품목명을 입력하세요.";
+  if (!input.inquiryDate) return "접수일을 입력하세요.";
+  return null;
+}
+
+/** 도메인 InquiryInput → save_inquiry RPC 파라미터 (저장용 — P4.4h 봉인 이후 유일한 쓰기 경로) */
+function saveInquiryParams(
+  id: string | null,
+  input: InquiryInput,
+): Record<string, unknown> {
   return {
-    company_id: input.partnerId,
-    inquiry_date: input.inquiryDate,
-    product_id: input.productId,
-    product_name: input.productName,
-    hs_code: input.hsCode,
-    quantity: input.quantity,
-    unit: input.unit,
-    transport: input.transport,
-    destination_country: input.destinationCountry,
-    destination_port: input.destinationPort,
-    destination_airport: input.destinationAirport,
-    incoterms: input.incoterms,
-    payment_terms: input.paymentTerms,
-    required_delivery_date: input.requiredDeliveryDate,
-    sample_requested: input.sampleRequested,
-    nda_required: input.ndaRequired,
-    status: input.status,
-    notes: input.notes,
-    updated_at: new Date().toISOString(),
+    p_id: id,
+    p_company_id: input.partnerId,
+    p_inquiry_date: input.inquiryDate,
+    p_product_id: input.productId,
+    p_product_name: input.productName,
+    p_hs_code: input.hsCode,
+    p_quantity: input.quantity,
+    p_unit: input.unit, // RPC 가 공란=없음(nullif+btrim)으로 정규화한다
+    p_transport: input.transport,
+    p_destination_country: input.destinationCountry,
+    p_destination_port: input.destinationPort,
+    p_destination_airport: input.destinationAirport,
+    p_incoterms: input.incoterms,
+    p_payment_terms: input.paymentTerms,
+    p_required_delivery_date: input.requiredDeliveryDate,
+    p_sample_requested: input.sampleRequested,
+    p_nda_required: input.ndaRequired,
+    p_status: input.status,
+    p_notes: input.notes,
   };
 }
 
@@ -116,17 +134,25 @@ export async function getInquiry(id: string): Promise<Inquiry | null> {
   return data ? mapRowToInquiry(data as unknown as InquiryRow) : null;
 }
 
-/** 문의 등록. */
+/**
+ * 문의 등록 — 쓰기는 save_inquiry RPC 경유(P4.4h: inquiries 직접 쓰기 봉인).
+ * RPC 는 거래처명 임베드 조인을 돌려주지 않으므로 저장 후 1건 재조회로
+ * 기존 반환 모양(partnerName·partnerCountry 포함)을 유지한다.
+ */
 export async function createInquiry(input: InquiryInput): Promise<Inquiry> {
+  const requiredError = inquiryRequiredError(input);
+  if (requiredError) throw new Error(requiredError);
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("inquiries")
-    .insert(mapInputToRow(input))
-    .select(INQUIRY_COLUMNS)
-    .single();
+  const { data, error } = await supabase.rpc(
+    "save_inquiry",
+    saveInquiryParams(null, input),
+  );
 
   if (error) throw new Error(`문의 등록 실패: ${error.message}`);
-  return mapRowToInquiry(data as unknown as InquiryRow);
+  const saved = await getInquiry((data as unknown as { id: string }).id);
+  if (!saved) throw new Error("문의 등록 실패: 저장된 문의를 다시 읽지 못했습니다.");
+  return saved;
 }
 
 /** 문의 수정 (정정. 삭제 없음 — 종결은 status='lost' 등으로, 원칙 5). */
@@ -134,14 +160,14 @@ export async function updateInquiry(
   id: string,
   input: InquiryInput,
 ): Promise<Inquiry> {
+  const requiredError = inquiryRequiredError(input);
+  if (requiredError) throw new Error(requiredError);
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("inquiries")
-    .update(mapInputToRow(input))
-    .eq("id", id)
-    .select(INQUIRY_COLUMNS)
-    .single();
+  const { error } = await supabase.rpc("save_inquiry", saveInquiryParams(id, input));
 
   if (error) throw new Error(`문의 수정 실패: ${error.message}`);
-  return mapRowToInquiry(data as unknown as InquiryRow);
+  const saved = await getInquiry(id);
+  if (!saved) throw new Error("문의 수정 실패: 저장된 문의를 다시 읽지 못했습니다.");
+  return saved;
 }

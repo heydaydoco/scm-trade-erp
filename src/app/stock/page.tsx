@@ -1,4 +1,4 @@
-import { listStockOnHand } from "@/services/stock";
+import { listStockOnHand, resolveAdjustmentUom } from "@/services/stock";
 import { listItems } from "@/services/items";
 import { todayKst } from "@/lib/date";
 import { PageHeader } from "@/components/PageHeader";
@@ -35,13 +35,17 @@ export default async function StockPage({
     loadError = e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.";
   }
 
+  // 단위는 저장 경로와 같은 규칙로 해석한다(P4.4h: 입력 unit → 마스터 unit → 거부).
+  // 폼은 입력 unit 을 보내지 않으므로 마스터가 비면 null — 'PCS' 를 지어내 보여주면
+  // "폼 예측 == 원장 기록" 불변식이 깨진다(저장은 RPC 가 어차피 거부). 그 품목은
+  // 입고·출고 폼과 같은 방식으로 잠근다.
   const itemOptions: StockItemOption[] = items
     .filter((i) => i.active !== false)
     .map((i) => ({
       id: i.id,
       code: i.code,
       name: i.name,
-      uom: i.baseUom ?? "PCS",
+      uom: resolveAdjustmentUom(null, i.baseUom),
     }));
 
   // 키에 단위가 들어간다 — 뷰 입도가 item×warehouse×uom 이기 때문(P4.1f).

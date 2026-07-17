@@ -6,6 +6,11 @@ import type { StockMovement, StockOnHand } from "./types";
 // 코드테이블은 codes.ts가 단일 진실(원칙 4). 원장을 다루는 쪽이 한 곳만 import 하도록 재수출.
 export { MOVEMENT_TYPES, ADJUSTMENT_TYPES, type MovementType };
 
+// ★ P4.4h: save_stock_adjustment 의 단위 체인(입력 unit → products.unit → 거부)은
+//   P4.3f 폴백 체인과 같은 순수 규칙이다 — 조정 문맥의 이름으로 재수출해
+//   테스트가 RPC 거부 경로의 미러를 실제 실행한다('PCS' 발명 금지).
+export { resolveUom as resolveAdjustmentUom } from "./docFlow";
+
 /**
  * 재고 원장 서비스 — SPEC D1·D2·D3, 원칙 1(원장)·원칙 7(로직/화면 분리)·원칙 8(마이너스 경고).
  *

@@ -48,22 +48,43 @@ export function mapProductToItem(row: ProductRow): Item {
   };
 }
 
-/** 도메인 ItemInput → products 컬럼 (저장용) */
-function mapItemInputToProduct(input: ItemInput): Record<string, unknown> {
+/**
+ * save_item RPC 필수값 거부의 **순수 미러** — 공란 품목명은 DB 왕복 없이 즉시
+ * 거부한다. 메시지는 RPC 의 RAISE 와 동일하게 유지할 것.
+ */
+export function itemNameError(name: string): string | null {
+  return name.trim() === "" ? "품목명은 필수 항목입니다." : null;
+}
+
+/**
+ * save_item RPC 의 unit 정규화 **순수 미러** — nullif(btrim(unit),'').
+ * 빈 문자열('', '  ')을 저장하지 않는다: uom 폴백 체인(라인 uom → products.unit)이
+ * '' 를 유효 단위로 오인하는 구멍을 마스터 저장 시점에 차단한다(P4.4h).
+ */
+export function normalizeUnit(unit: string | null): string | null {
+  const trimmed = unit?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** 도메인 ItemInput → save_item RPC 파라미터 (저장용 — P4.4h 봉인 이후 유일한 쓰기 경로) */
+function saveItemParams(
+  id: string | null,
+  input: ItemInput,
+): Record<string, unknown> {
   return {
-    code: input.code,
-    product_name: input.name,
-    hs_code: input.hsCode,
-    unit: input.baseUom,
-    unit_price: input.stdPrice,
-    currency: input.currency,
-    origin_country: input.originCountry,
-    is_dangerous: input.isDangerous,
-    lot_managed: input.lotManaged,
-    serial_managed: input.serialManaged,
-    description: input.description,
-    active: input.active,
-    updated_at: new Date().toISOString(),
+    p_id: id,
+    p_code: input.code,
+    p_name: input.name,
+    p_hs_code: input.hsCode,
+    p_unit: normalizeUnit(input.baseUom), // RPC 도 같은 규칙로 재정규화한다(공란=없음)
+    p_unit_price: input.stdPrice,
+    p_currency: input.currency,
+    p_origin_country: input.originCountry,
+    p_is_dangerous: input.isDangerous,
+    p_lot_managed: input.lotManaged,
+    p_serial_managed: input.serialManaged,
+    p_description: input.description,
+    p_active: input.active,
   };
 }
 
@@ -146,14 +167,16 @@ export async function getItem(id: string): Promise<Item | null> {
   return data ? mapProductToItem(data as unknown as ProductRow) : null;
 }
 
-/** 품목 등록. */
+/** 품목 등록 — 쓰기는 save_item RPC 경유(P4.4h: products 직접 쓰기 봉인). */
 export async function createItem(input: ItemInput): Promise<Item> {
+  const nameError = itemNameError(input.name);
+  if (nameError) throw new Error(nameError);
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("products")
-    .insert(mapItemInputToProduct(input))
-    .select(PRODUCT_COLUMNS)
-    .single();
+  const { data, error } = await supabase.rpc(
+    "save_item",
+    saveItemParams(null, input),
+  );
 
   if (error) throw new Error(`품목 등록 실패: ${error.message}`);
   return mapProductToItem(data as unknown as ProductRow);
@@ -161,13 +184,14 @@ export async function createItem(input: ItemInput): Promise<Item> {
 
 /** 품목 수정 (정정. 삭제 대신 active 토글로 비활성 — 원칙 5). */
 export async function updateItem(id: string, input: ItemInput): Promise<Item> {
+  const nameError = itemNameError(input.name);
+  if (nameError) throw new Error(nameError);
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("products")
-    .update(mapItemInputToProduct(input))
-    .eq("id", id)
-    .select(PRODUCT_COLUMNS)
-    .single();
+  const { data, error } = await supabase.rpc(
+    "save_item",
+    saveItemParams(id, input),
+  );
 
   if (error) throw new Error(`품목 수정 실패: ${error.message}`);
   return mapProductToItem(data as unknown as ProductRow);

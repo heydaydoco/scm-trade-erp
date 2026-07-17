@@ -9,7 +9,8 @@ export interface StockItemOption {
   id: string;
   code: string | null;
   name: string;
-  uom: string;
+  /** null = 단위 불명 — 저장이 거부되므로 폼이 그 품목을 잠근다(P4.4h, 'PCS' 발명 금지). */
+  uom: string | null;
 }
 
 /** 품목×창고 현재고 — 저장 전 예상재고를 화면에서 미리 계산하기 위한 조회표. */
@@ -40,9 +41,13 @@ export function StockAdjustForm({
   const [showLot, setShowLot] = useState(Boolean(v?.lotNo));
 
   const item = items.find((i) => i.id === itemId);
+  // 단위 불명 품목은 저장이 거부된다(P4.4h RPC: 입력 unit → products.unit → RAISE).
+  // 옵션을 잠그지만, 재시도 값 복원 등으로 선택돼 있어도 여기서 한 번 더 막는다.
+  const uomMissing = Boolean(item) && item!.uom === null;
   // 키에 단위 포함 — 뷰 입도가 item×warehouse×uom 이다(P4.1f). 새 조정은 품목의
   // 현재 마스터 단위로 기록되므로, 예상재고도 그 단위의 기존 재고와만 더한다.
-  const current = item ? (onHand[`${itemId}|${warehouseCode}|${item.uom}`] ?? 0) : 0;
+  const current =
+    item && item.uom ? (onHand[`${itemId}|${warehouseCode}|${item.uom}`] ?? 0) : 0;
 
   // 저장 전 예상재고 — 원칙 8(마이너스는 차단이 아니라 경고 후 허용)의 근거.
   // 서비스의 projectedOnHand와 같은 규칙이지만, 여기는 클라이언트라 서버 코드를 못 부른다.
@@ -59,9 +64,14 @@ export function StockAdjustForm({
    * 취소하면 저장을 중단한다.
    */
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (uomMissing) {
+      // RPC 거부 메시지와 같은 안내를 왕복 없이 — resolveAdjustmentUom 미러의 결.
+      e.preventDefault();
+      return;
+    }
     if (willGoNegative) {
       const ok = window.confirm(
-        `현재고가 ${projected}${item ? " " + item.uom : ""} 가 됩니다(마이너스).\n\n` +
+        `현재고가 ${projected}${item?.uom ? " " + item.uom : ""} 가 됩니다(마이너스).\n\n` +
           `입고 전기가 아직 안 된 경우일 수 있습니다. 그대로 진행할까요?\n` +
           `(마이너스 재고는 홈 화면에 표시되어 추적됩니다)`,
       );
@@ -93,9 +103,10 @@ export function StockAdjustForm({
           >
             <option value="">선택하세요</option>
             {items.map((i) => (
-              <option key={i.id} value={i.id}>
+              <option key={i.id} value={i.id} disabled={i.uom === null}>
                 {i.code ? `[${i.code}] ` : ""}
                 {i.name}
+                {i.uom === null ? " — 단위 없음(조정 불가)" : ""}
               </option>
             ))}
           </select>
@@ -154,8 +165,16 @@ export function StockAdjustForm({
         </Field>
       </div>
 
+      {/* 단위 불명 품목 — 저장 경로(RPC)가 거부하므로 폼도 같은 말로 잠근다. */}
+      {uomMissing && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          단위를 알 수 없어 저장할 수 없습니다 — 품목 마스터에서 단위를 입력한 뒤
+          다시 시도하세요.
+        </p>
+      )}
+
       {/* 예상재고 — 저장 누르기 전에 결과를 보여준다(환율 폼의 ÷단위 미리보기와 같은 사상). */}
-      {itemId && (
+      {itemId && !uomMissing && (
         <div
           className={`rounded-md px-3 py-2 text-sm ${
             willGoNegative
@@ -171,7 +190,7 @@ export function StockAdjustForm({
               <b>{projected}</b>
             </>
           )}
-          {item ? ` ${item.uom}` : ""}
+          {item?.uom ? ` ${item.uom}` : ""}
           <span className="text-xs opacity-70">
             {" "}
             · {warehouseCode}
@@ -218,7 +237,7 @@ export function StockAdjustForm({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || uomMissing}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {pending ? "저장 중…" : "재고 조정 등록"}

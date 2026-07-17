@@ -76,29 +76,39 @@ export function mapCompanyToPartner(row: CompanyRow): Partner {
   };
 }
 
-/** 도메인 PartnerInput → companies 컬럼 (저장용) */
-function mapPartnerInputToCompany(input: PartnerInput): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    company_name: input.name,
-    country: input.country,
-    city: input.city,
-    address: input.address,
-    contact_name: input.contactName,
-    contact_email: input.contactEmail,
-    contact_phone: input.contactPhone,
-    currency: input.currency,
-    payment_terms: input.paymentTerms,
-    incoterms: input.incoterms,
-    notes: input.notes,
-    active: input.active,
-    updated_at: new Date().toISOString(),
+/**
+ * save_company RPC 필수값 거부의 **순수 미러** — 공란 상호명은 DB 왕복 없이 즉시
+ * 거부한다. 메시지는 RPC 의 RAISE 와 동일하게 유지할 것(폼·서비스·DB 3겹이 같은
+ * 말을 해야 어느 겹에서 걸려도 사용자 경험이 같다).
+ */
+export function companyNameError(name: string): string | null {
+  return name.trim() === "" ? "거래처명은 필수 항목입니다." : null;
+}
+
+/** 도메인 PartnerInput → save_company RPC 파라미터 (저장용 — P4.4h 봉인 이후 유일한 쓰기 경로) */
+function saveCompanyParams(
+  id: string | null,
+  input: PartnerInput,
+): Record<string, unknown> {
+  return {
+    p_id: id,
+    p_name: input.name,
+    // 구분이 '미분류(unknown)'면 null — RPC 가 기존 분류를 보존한다.
+    // (사용자가 의도적으로 분류를 고르기 전까지 NULL/예상밖 값이 buyer로 덮어써지지 않게)
+    p_company_type:
+      input.type === "unknown" ? null : mapPartnerTypeToCompanyType(input.type),
+    p_country: input.country,
+    p_city: input.city,
+    p_address: input.address,
+    p_contact_name: input.contactName,
+    p_contact_email: input.contactEmail,
+    p_contact_phone: input.contactPhone,
+    p_currency: input.currency,
+    p_payment_terms: input.paymentTerms,
+    p_incoterms: input.incoterms,
+    p_notes: input.notes,
+    p_active: input.active,
   };
-  // 구분이 '미분류(unknown)'면 company_type을 건드리지 않아 원본을 보존한다.
-  // (사용자가 의도적으로 분류를 고르기 전까지 NULL/예상밖 값이 buyer로 덮어써지지 않게)
-  if (input.type !== "unknown") {
-    out.company_type = mapPartnerTypeToCompanyType(input.type);
-  }
-  return out;
 }
 
 /* ---------- I/O (서비스). 화면은 이 함수들만 호출한다. ---------- */
@@ -130,14 +140,16 @@ export async function getPartner(id: string): Promise<Partner | null> {
   return data ? mapCompanyToPartner(data as unknown as CompanyRow) : null;
 }
 
-/** 거래처 등록. */
+/** 거래처 등록 — 쓰기는 save_company RPC 경유(P4.4h: companies 직접 쓰기 봉인). */
 export async function createPartner(input: PartnerInput): Promise<Partner> {
+  const nameError = companyNameError(input.name);
+  if (nameError) throw new Error(nameError);
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("companies")
-    .insert(mapPartnerInputToCompany(input))
-    .select(COMPANY_COLUMNS)
-    .single();
+  const { data, error } = await supabase.rpc(
+    "save_company",
+    saveCompanyParams(null, input),
+  );
 
   if (error) throw new Error(`거래처 등록 실패: ${error.message}`);
   return mapCompanyToPartner(data as unknown as CompanyRow);
@@ -148,13 +160,14 @@ export async function updatePartner(
   id: string,
   input: PartnerInput,
 ): Promise<Partner> {
+  const nameError = companyNameError(input.name);
+  if (nameError) throw new Error(nameError);
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("companies")
-    .update(mapPartnerInputToCompany(input))
-    .eq("id", id)
-    .select(COMPANY_COLUMNS)
-    .single();
+  const { data, error } = await supabase.rpc(
+    "save_company",
+    saveCompanyParams(id, input),
+  );
 
   if (error) throw new Error(`거래처 수정 실패: ${error.message}`);
   return mapCompanyToPartner(data as unknown as CompanyRow);

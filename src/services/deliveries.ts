@@ -23,6 +23,7 @@ export {
   resolveUom,
   resolveUomOrThrow,
   resolveDocLineUom,
+  uomConflict,
 } from "./docFlow";
 export type { DocQtyLike as DeliveryQtyLike } from "./docFlow";
 import { resolveDocLineUoms } from "./uomResolution";

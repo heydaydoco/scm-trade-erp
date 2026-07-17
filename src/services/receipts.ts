@@ -26,6 +26,7 @@ export {
   resolveUom,
   resolveUomOrThrow,
   resolveDocLineUom,
+  uomConflict,
 } from "./docFlow";
 export type { DocQtyLike as ReceiptQtyLike } from "./docFlow";
 import { resolveDocLineUoms } from "./uomResolution";
@@ -269,8 +270,9 @@ export interface ReceiptLineInput {
  *   화면이 보낸 단위를 쓰지 않는다 — RPC 가 품목을 발주 라인에서 가져오듯(P4.2f),
  *   단위도 DB 의 발주 라인·품목 마스터에서 가져온다(화면 값은 표시·경고용일 뿐).
  *   'PCS' 하드코딩 폴백은 없다: 단위 불명 수량이 원장에 들어가는 것 자체가 결함.
- *   여기서 항상 해석 완료된 단위를 보내므로 RPC 의 "클라이언트 uom → products.unit
- *   → 'PCS'" 폴백은 앱 경로에서 죽은 코드가 된다(RPC 무수정 — 라이브 잠금 원칙).
+ *   P4.4h 부터 RPC 도 같은 체인으로 **서버 재해석**한다('PCS' 폴백 제거) — 여기서
+ *   보내는 uom 은 제공 시 재해석 결과와 일치해야 하며(불일치 = stale 폼 거부,
+ *   docFlow.uomConflict 미러), 같은 규칙(resolveUom)이라 정상 경로에선 항상 일치한다.
  */
 export async function saveGoodsReceipt(input: {
   poId: string;

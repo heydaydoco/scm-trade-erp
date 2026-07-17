@@ -42,6 +42,7 @@ export {
   resolveUom,
   resolveUomOrThrow,
   resolveDocLineUom,
+  uomConflict,
 } from "./docFlow";
 export type { DocQtyLike as ShipmentQtyLike } from "./docFlow";
 
@@ -400,8 +401,9 @@ export async function saveShipmentCargo(input: {
     })),
   });
 
-  // 연결 오류가 단위 오류보다 먼저다 — RPC 는 uom 검사가 연결 검사보다 앞서 있어
-  // 여기서 정확한 원인을 말하지 않으면 "단위를 알 수 없어…" 오진이 뜬다.
+  // 연결 오류가 단위 오류보다 먼저다 — P4.4h 부터는 RPC 도 같은 순서다(연결 검사
+  // 뒤에 서버 uom 재해석). 이 선검사는 우회책이 아니라 같은 순서의 빠른 가드로
+  // 남긴다: DB 왕복 전에 정확한 원인을 한국어로 말한다(오진 방지 UX 유지).
   const notLinkedIdx = resolutions.findIndex((r) => !r.linked);
   if (notLinkedIdx >= 0) {
     throw new Error(
