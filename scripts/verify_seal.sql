@@ -9,13 +9,16 @@
 --  has_table_privilege('anon', …) 는 역할 상속·PUBLIC 부여까지 전부 계산한 **실효 권한**을
 --  돌려준다. information_schema 를 훑는 것보다 확정적이다.
 --
---  기대값 (P4.4h 이후):
+--  기대값 (P4.5 이후):
 --    · '위반(쓰기권한 잔존)' — **0행**. public 의 모든 테이블·뷰에서 anon/authenticated 의
 --      INSERT/UPDATE/DELETE 가 전부 false 여야 한다(알려진 목록 나열이 아니라 전면 스캔).
 --      쓰기는 SECURITY DEFINER RPC 로만: save_quotation·save_sales_order·
 --      save_purchase_order·save_shipment·save_goods_receipt·save_delivery·
 --      save_shipment_cargo·save_stock_adjustment·reverse_stock_movement·
---      cancel_* · save_company·save_item·save_fx_rate·save_inquiry (P4.4h 신설 4종).
+--      cancel_* · save_company·save_item·save_fx_rate·save_inquiry (P4.4h 신설 4종)·
+--      save_trade_document·cancel_trade_document (P4.5 신설 2종).
+--    · 스캔은 동적 전면 스캔이라 P4.5 신규 2테이블(trade_documents·trade_document_lines)도
+--      자동 포함된다 — 객체 총수 기대값은 29 → 31.
 --    · '스캔 요약' — 객체 총수가 0이면 스캔 자체가 실패한 것(공허통과 방지 수치).
 --    · fx_rates: INSERT 까지 봉인(P4.4h) — 과거 "select·insert true" 기대값은 폐기됨.
 --    · audit_log: 쓰기 전부 false (insert 는 P4.2 에서 회수 — fn_audit 이 DEFINER 라 감사는 산다).
