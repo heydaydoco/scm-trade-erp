@@ -220,6 +220,15 @@ export const GR_STATUS: Code[] = [
 ];
 
 /**
+ * 무역서류 상태 (P4.5 — 실제 trade_documents.status 값, 소문자 판정 R3).
+ * 발행 후 불변 — 수정 없음, 취소(사유 필수)와 재발행(새 번호)만(D1).
+ */
+export const TRADE_DOC_STATUS: Code[] = [
+  { code: "issued", label: "발행" },
+  { code: "cancelled", label: "취소" },
+];
+
+/**
  * 재고 이동 유형 (P4.1, SPEC D2 — 원칙 4 코드테이블: 부호·의미를 코드가 갖는다).
  *
  * ⚠️ `sign` 이 이 시스템의 부호 단일 진실이다. 화면은 항상 양수만 입력받고,

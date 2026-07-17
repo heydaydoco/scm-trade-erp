@@ -61,6 +61,7 @@ export interface SellerLike {
   addressLines: string[];
   tel: string;
   email: string;
+  bizRegNo: string; // D7(P4.5): 스냅샷 경유 유실 수정 — 계약에 실려야 소비처가 쓸 수 있다
 }
 
 export interface PartnerLike {

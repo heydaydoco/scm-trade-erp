@@ -720,3 +720,169 @@ export interface ShippableOrderLine {
   shippedQty: number; // 살아있는 선적 라인 합(전 선적 대상)
   openQty: number; // 음수 = 초과 선적(차단 아님, 원칙 8)
 }
+
+/* ---------- P4.5 무역서류 CI/PL — 발행=스냅샷 전량, 인쇄는 이것만 본다 ---------- */
+
+/**
+ * 무역서류 라인 — 발행 시점 전량 스냅샷(D2). shipmentLineId/orderLineId 는
+ * 소프트 포인터(추적용) — 원천이 사라져도 문서는 불변이다.
+ */
+export interface TradeDocumentLine {
+  id: string;
+  lineNo: number;
+  shipmentLineId: string | null;
+  orderLineId: string | null;
+  productCode: string | null;
+  productName: string;
+  description: string | null;
+  hsCode: string | null;
+  originCountry: string | null;
+  qty: number;
+  uom: string;
+  unitPrice: number;
+  amount: number; // = round2(qty × unitPrice) — RPC 가 계산(클라 값 불신)
+  netWeight: number | null; // 폼 직접 입력 (D5)
+  grossWeight: number | null; // 폼 직접 입력, 프리필=선적 라인 G.W.(R1)
+}
+
+/** 포장 스냅샷 1행 — R-정정: "이 문서에 포함된 라인"의 S/I 스칼라만으로 구성. */
+export interface TradeDocumentPackage {
+  shipmentLineId: string | null;
+  itemName: string | null;
+  packageCount: number | null;
+  packageType: string | null;
+  grossWeightKg: number | null;
+  cbm: number | null;
+}
+
+/**
+ * 무역서류 헤더 — CI+PL 세트 = 1행 = 번호 1개(D1). PL 은 자체 번호 없이
+ * docNumber 를 Invoice No.로 참조 인쇄한다. 발행 후 불변 — 취소·재발행만.
+ */
+export interface TradeDocument {
+  id: string;
+  docType: string; // 'CI'
+  docNumber: string; // CI-YYYYMM-NNN (doc_type='trade_document' 카운터, R2)
+  shipmentId: string;
+  customerId: string;
+  currency: string;
+  issueDate: string; // YYYY-MM-DD (KST)
+  incoterm: string | null;
+  incotermPlace: string | null;
+  paymentTerms: string | null;
+  remarks: string | null;
+  // Seller 스냅샷 (config 원천, D6·D7)
+  sellerName: string;
+  sellerAddress: string; // 줄바꿈(\n) 결합 — 인쇄가 줄로 나눈다
+  sellerCountry: string;
+  sellerTel: string | null;
+  sellerEmail: string | null;
+  sellerBizRegNo: string;
+  sellerBankName: string | null; // 은행·서명자는 선택 — null 이면 섹션 생략
+  sellerAccountNo: string | null;
+  sellerSwift: string | null;
+  sellerSignatoryName: string | null;
+  sellerSignatoryTitle: string | null;
+  // Buyer 스냅샷 (발행 시점 SO 고객 companies 미러, D6)
+  buyerName: string;
+  buyerAddress: string | null;
+  buyerCity: string | null;
+  buyerCountry: string | null;
+  buyerContactName: string | null;
+  buyerEmail: string | null;
+  buyerPhone: string | null;
+  // Consignee / Notify 스냅샷 (shipment_parties 복사 — 없으면 null, D6)
+  consigneeName: string | null;
+  consigneeAddress: string | null;
+  consigneeContact: string | null;
+  notifyName: string | null;
+  notifyAddress: string | null;
+  notifyContact: string | null;
+  // 선적정보 스냅샷 (shipments 가 실제 가진 필드 범위 내)
+  shippingMarks: string | null;
+  shipmentNo: string | null;
+  transport: string | null;
+  vesselVoyage: string | null;
+  pol: string | null;
+  pod: string | null;
+  carrier: string | null;
+  blNo: string | null;
+  bookingNo: string | null;
+  containerNo: string | null;
+  packagesSnapshot: TradeDocumentPackage[];
+  subtotalAmount: number;
+  discountAmount: number; // D3 비례 배분 합 (0이면 인쇄에서 행 생략)
+  totalAmount: number;
+  status: string; // TRADE_DOC_STATUS: issued | cancelled (R3 소문자)
+  cancelledAt: string | null; // ISO
+  cancelReason: string | null;
+  createdAt: string;
+  lines: TradeDocumentLine[];
+}
+
+/** 목록·선적 상세 섹션용 요약 행 — 전부 헤더 스냅샷이라 조인이 필요 없다. */
+export interface TradeDocumentListItem {
+  id: string;
+  docNumber: string;
+  shipmentId: string;
+  shipmentNo: string | null;
+  customerId: string;
+  buyerName: string;
+  currency: string;
+  totalAmount: number;
+  status: string;
+  issueDate: string;
+  createdAt: string;
+}
+
+/** 발행 라인 입력 — 보충 필드만(qty·uom·단가·금액은 서버가 원천에서 재계산). */
+export interface TradeDocumentLineInput {
+  shipmentLineId: string;
+  include: boolean;
+  hsCode: string | null;
+  originCountry: string | null;
+  netWeight: number | null;
+  grossWeight: number | null;
+  description: string | null;
+}
+
+/** 발행 입력 — Seller 는 서비스가 config 에서 채운다(폼 입력 아님). */
+export interface TradeDocumentIssueInput {
+  shipmentId: string;
+  customerId: string;
+  currency: string;
+  issueDate: string | null; // null = 오늘(KST)
+  incoterm: string | null;
+  incotermPlace: string | null;
+  paymentTerms: string | null;
+  remarks: string | null;
+  lines: TradeDocumentLineInput[];
+}
+
+/**
+ * 발행 폼용 파생 행 — 선적 라인 + 주문/품목 체인을 서버에서 한 번에 붙인 읽기 전용 뷰.
+ * unitPrice/amount 는 미리보기(진실은 RPC 재계산), *Prefill 은 폼 초기값(수정 가능 스냅샷).
+ */
+export interface IssuableLine {
+  shipmentLineId: string;
+  orderType: "SO" | "PO";
+  itemName: string;
+  qty: number;
+  uom: string;
+  orderLineId: string | null;
+  soId: string | null;
+  soNumber: string | null;
+  customerId: string | null;
+  customerName: string | null;
+  currency: string | null; // 공란 = 발행 불가(경고 대상)
+  unitPrice: number | null; // so_lines 계약 단가 — null 이면 서버가 발행 거부
+  amount: number | null; // = round2(qty × unitPrice) 미리보기
+  soDiscount: number; // D3 미리보기용
+  soOrderTotal: number; // D3 분모 미러(amount null 라인은 qty×단가 재계산 합산)
+  hsPrefill: string | null; // so_line.hs_code → products.hs_code
+  originPrefill: string | null; // products.origin_country (발명 금지 — 없으면 공란)
+  descriptionPrefill: string | null; // so_line.description
+  grossWeightPrefill: number | null; // R1: shipment_line.gross_weight_kg
+  packageCount: number | null; // R-정정 포장 경고 판정용
+  packageType: string | null;
+}

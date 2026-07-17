@@ -68,6 +68,7 @@ const seller = {
   addressLines: ["1F, 2 Teheran-ro", "Gangnam-gu, Seoul, Korea"],
   tel: "+82-2-0000-0000",
   email: "trade@example.com",
+  bizRegNo: "000-00-00000", // D7: SellerLike 계약에 추가
 };
 const partner = {
   id: "P1",

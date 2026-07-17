@@ -91,6 +91,7 @@ export default async function EditShipmentPage({
     addressLines: [...SELLER.addressLines],
     tel: SELLER.tel,
     email: SELLER.email,
+    bizRegNo: SELLER.bizRegNo, // D7: 스냅샷 경유 유실 수정
   };
 
   return (

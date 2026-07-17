@@ -1,0 +1,180 @@
+/**
+ * 무역서류(P4.5 CI/PL) 순수 로직 — I/O 없음 → 단위 테스트 대상(tradeDocLogic.test.ts).
+ *
+ * ⚠️ **클라이언트 안전 모듈**이다(cargoLogic.ts 와 같은 결) — 발행 폼은 브라우저에서
+ *    조합·할인 미리보기·중량/포장 경고를 계산해야 하는데 services/tradeDocuments.ts 는
+ *    supabase 서버 클라이언트를 import 하므로 "use client" 에서 못 부른다
+ *    → 순수부만 여기 떼어 두고 tradeDocuments.ts 가 재수출한다.
+ *
+ * ⚠️ 여기의 산식은 save_trade_document RPC 의 **미러**다(화면 미리보기 = 저장값, 원칙 2).
+ *    진실은 서버(RPC) — 이 모듈이 서버와 다르게 계산하면 미리보기가 거짓말을 한다.
+ */
+import { round2 } from "./codes";
+import { round6 } from "./docFlow";
+
+/* ---------- ① (고객×통화) 발행 조합 — D4: 생성 단위 = 선적×고객×통화 ---------- */
+
+export interface ComboSourceLine {
+  shipmentLineId: string;
+  orderType: "SO" | "PO";
+  customerId: string | null;
+  customerName: string | null;
+  currency: string | null; // sales_orders.currency 원문 (공란·공백 = 없음)
+  soNumber: string | null;
+}
+
+export interface IssuableCombo {
+  customerId: string;
+  customerName: string | null;
+  currency: string;
+  lineCount: number;
+  soNumbers: string[]; // 표시용 (중복 제거, 등장 순서)
+}
+
+/**
+ * 선적 라인에서 발행 가능한 (고객×통화) 조합을 만든다.
+ * - PO 라인은 조합 대상이 아니다(수입 서류는 공급자 발행 — 정의이므로 경고 없음).
+ * - 통화 공란 SO·고객 미상 라인은 제외 + 경고(RPC 도 같은 이유로 거부한다).
+ */
+export function issuableCombos(lines: readonly ComboSourceLine[]): {
+  combos: IssuableCombo[];
+  warnings: string[];
+} {
+  const combos = new Map<string, IssuableCombo>();
+  const warned = new Set<string>();
+  const warnings: string[] = [];
+
+  for (const l of lines) {
+    if (l.orderType !== "SO") continue;
+    const currency = l.currency?.trim() || null;
+    const soLabel = l.soNumber ?? "(번호 미상)";
+    if (!currency) {
+      if (!warned.has(`cur:${soLabel}`)) {
+        warned.add(`cur:${soLabel}`);
+        warnings.push(`주문 ${soLabel}: 통화가 지정되지 않아 발행 대상에서 제외했습니다.`);
+      }
+      continue;
+    }
+    if (!l.customerId) {
+      if (!warned.has(`cust:${soLabel}`)) {
+        warned.add(`cust:${soLabel}`);
+        warnings.push(`주문 ${soLabel}: 고객을 알 수 없어 발행 대상에서 제외했습니다.`);
+      }
+      continue;
+    }
+    const key = `${l.customerId}|${currency}`;
+    const combo = combos.get(key);
+    if (!combo) {
+      combos.set(key, {
+        customerId: l.customerId,
+        customerName: l.customerName,
+        currency,
+        lineCount: 1,
+        soNumbers: l.soNumber ? [l.soNumber] : [],
+      });
+    } else {
+      combo.lineCount += 1;
+      if (l.soNumber && !combo.soNumbers.includes(l.soNumber)) {
+        combo.soNumbers.push(l.soNumber);
+      }
+    }
+  }
+  return { combos: Array.from(combos.values()), warnings };
+}
+
+/* ---------- ② D3 할인 비례 배분 — save_trade_document 산식 미러 ---------- */
+
+export interface DiscountAllocEntry {
+  soNumber: string | null;
+  discount: number; // SO 헤더 할인 (null 은 호출부가 0 으로)
+  docAmount: number; // 이 문서에 포함된 그 주문 라인 금액합
+  orderTotal: number; // 그 주문 전체 라인 금액합 (amount null 라인은 qty×단가 재계산 합산)
+}
+
+/**
+ * discount = Σ 주문별 round2(주문 discount × docAmount ÷ orderTotal).
+ * orderTotal ≤ 0 이면 그 주문은 0 처리 + 경고(할인이 0이 아닐 때만 — 배분할 것이 없으면 침묵).
+ * 음수 할인은 충실 배분하되 경고한다(서버도 동일 — 값 발명 금지).
+ */
+export function allocateDiscounts(entries: readonly DiscountAllocEntry[]): {
+  discount: number;
+  warnings: string[];
+} {
+  let discount = 0;
+  const warnings: string[] = [];
+  for (const e of entries) {
+    const soLabel = e.soNumber ?? "(번호 미상)";
+    if (e.orderTotal <= 0) {
+      if (e.discount !== 0) {
+        warnings.push(
+          `주문 ${soLabel}: 라인 금액 합(${e.orderTotal})이 0 이하라 할인(${e.discount})을 배분하지 않았습니다.`,
+        );
+      }
+      continue;
+    }
+    if (e.discount < 0) {
+      warnings.push(`주문 ${soLabel}: 할인이 음수(${e.discount})입니다 — 주문 데이터 확인이 필요합니다.`);
+    }
+    discount += round2((e.discount * e.docAmount) / e.orderTotal);
+  }
+  return { discount: round2(discount), warnings };
+}
+
+/* ---------- ③ 라인 금액·합계 — D2: amount = round2(qty × 단가) ---------- */
+
+/** 라인 금액 — 서버와 동일하게 round2. 미리보기 = 저장값(원칙 2). */
+export function lineAmount(qty: number, unitPrice: number): number {
+  return round2(qty * unitPrice);
+}
+
+export function subtotalOf(lines: readonly { qty: number; unitPrice: number }[]): number {
+  return round2(lines.reduce((s, l) => s + lineAmount(l.qty, l.unitPrice), 0));
+}
+
+export function totalOf(subtotal: number, discount: number): number {
+  return round2(subtotal - discount);
+}
+
+/** 단가 0(qty>0) 라인 수 — 폼 경고 "0원 라인 n건"의 근거(차단 아님, 원칙 8). */
+export function zeroPriceCount(lines: readonly { unitPrice: number }[]): number {
+  return lines.filter((l) => l.unitPrice === 0).length;
+}
+
+/* ---------- ④ D5·R1 중량 — all-or-nothing 인쇄 규칙 ---------- */
+
+/** all = 전 라인 입력(컬럼+TOTAL 인쇄) / partial = 컬럼 생략+폼 경고 / none = 생략. */
+export type AllOrNothing = "all" | "none" | "partial";
+
+export function weightFillMode(values: readonly (number | null)[]): AllOrNothing {
+  if (values.length === 0) return "none";
+  const filled = values.filter((v) => v !== null).length;
+  if (filled === 0) return "none";
+  return filled === values.length ? "all" : "partial";
+}
+
+/** 중량 TOTAL — kg 고정 단위 단일 합(S/I sumFinite 와 같은 round6). 'all' 일 때만 인쇄. */
+export function weightTotal(values: readonly (number | null)[]): number {
+  return round6(values.reduce<number>((s, v) => (v === null ? s : s + v), 0));
+}
+
+/* ---------- ⑤ R-정정 포장 섹션 — 포함 라인 스코프 all-or-nothing ---------- */
+
+export interface PackingLike {
+  packageCount: number | null;
+  packageType: string | null;
+}
+
+/**
+ * 포장 데이터 "보유" = packageCount > 0 그리고 packageType 비공란(S/I 총계 규칙과 동일).
+ * 전원 보유 = all(섹션 인쇄 — 유형별 TOTAL 은 cargoLogic.packageTotalsByType 재사용),
+ * 일부 보유 = partial(섹션 생략 + 폼 경고: "발행 전에는 선적 화물 화면에서 채울 수 있다"),
+ * 전무 = none(섹션 생략).
+ */
+export function packingFillMode(lines: readonly PackingLike[]): AllOrNothing {
+  if (lines.length === 0) return "none";
+  const has = (l: PackingLike) =>
+    l.packageCount !== null && l.packageCount > 0 && !!l.packageType?.trim();
+  const filled = lines.filter(has).length;
+  if (filled === 0) return "none";
+  return filled === lines.length ? "all" : "partial";
+}
