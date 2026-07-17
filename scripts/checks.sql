@@ -365,7 +365,28 @@ from (
   from public.deliveries
   order by ref_doc_id, created_at
 ) f
-where f.so_status_before is null;
+where f.so_status_before is null
+
+union all
+
+-- ── ⓔ 전면 봉인 잔존 스캔 (P4.4h) ──────────────────────────────────────────
+--  알려진 목록 나열이 아니라 public 의 **모든 테이블·뷰**를 스캔한다 — 새로 생긴
+--  객체가 Supabase 기본권한(grant all)을 들고 있으면 여기서 바로 걸린다.
+--  기대값: 0건. 쓰기는 SECURITY DEFINER RPC 로만(구세대 4화면도 P4.4h 부터 RPC).
+--  상세 표(위반 목록 + 스캔 수치)는 scripts/verify_seal.sql.
+select
+  'ⓔ 전면 봉인 잔존(테이블·뷰 전체)',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건: ' || string_agg(obj || '/' || role || '/' || priv, ', ') end
+from (
+  select cls.relname::text as obj, r.role, pr.priv
+  from pg_class cls
+  join pg_namespace n on n.oid = cls.relnamespace
+  cross join (values ('anon'),('authenticated')) as r(role)
+  cross join (values ('INSERT'),('UPDATE'),('DELETE')) as pr(priv)
+  where n.nspname = 'public'
+    and cls.relkind in ('r', 'p', 'v', 'm')
+    and has_table_privilege(r.role, cls.oid, pr.priv)
+) x;
 
 -- ⬆ 이 판정표가 **파일의 마지막 결과**다 (Supabase SQL Editor 는 여러 문장을 실행해도
 --   마지막 SELECT 의 결과만 Results 에 보여준다 → 합격 판정이 가려지지 않게 맨 뒤에 둔다).
