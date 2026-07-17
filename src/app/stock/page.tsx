@@ -119,7 +119,9 @@ export default async function StockPage({
               </tr>
             )}
             {rows.map((r) => (
-              <tr key={`${r.itemId}|${r.warehouseCode}`} className="hover:bg-slate-50">
+              // 키에 uom 포함 — 뷰 입도가 item×warehouse×uom 이라(P4.1f) 단위 혼재
+              // 품목은 행이 갈라진다. uom 없는 키는 그 경우 React 키 중복.
+              <tr key={`${r.itemId}|${r.warehouseCode}|${r.uom}`} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-mono text-xs text-slate-500">
                   {r.itemCode ?? "—"}
                 </td>

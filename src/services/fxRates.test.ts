@@ -65,6 +65,13 @@ describe("fxRateInputError — save_fx_rate 검증 RAISE 의 미러", () => {
     );
   });
 
+  it("★정규화 결과가 0이 되는 극소값도 거부 — round6 절사 (RPC RAISE 와 전문 일치)", () => {
+    // 1e-7 은 양수·유한이라 앞 관문을 통과하지만 round6 로 0 이 된다.
+    expect(fxRateInputError({ ...valid, quotedRate: 1e-7, quoteUnit: 1 })).toBe(
+      "정규화된 환율이 올바르지 않습니다.",
+    );
+  });
+
   it("정상 입력은 통과한다 (null 반환 = 저장 진행 — 정상 경로)", () => {
     expect(fxRateInputError(valid)).toBeNull();
     expect(
