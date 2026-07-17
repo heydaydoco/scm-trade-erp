@@ -1141,6 +1141,8 @@ notify pgrst, 'reload schema';
 --  ④ 적용 결과: 신설 RPC 4종 존재 + save_stock_adjustment 오버로드 1개(모호성 없음).
 --  ⑤ 고아 인구조사: 7종 각각 존재 여부·정확 행수(미존재 = 'absent') — DROP 판정의
 --     입력 자료(백로그 "고아 7종 실사·처분"). 빈 DB 재구축에서는 전부 'absent'.
+--  ⑥ 고아 SELECT 봉인: 전면 스캔은 I/U/D 만 보므로, 고아 7종의 SELECT 회수는
+--     여기서 별도 확인한다(anon 기대 false. 살아있는 13종은 SELECT 유지가 정상).
 with scan as (
   select cls.oid,
          cls.relname::text as obj,
@@ -1209,6 +1211,17 @@ select * from (
                              to_regclass('public.' || o.tbl)),
                       false, true, '')))[1]::text,
              '0')
+         end
+    from (values
+      ('claims'), ('customs_declarations'), ('orders'), ('order_items'),
+      ('payments'), ('production_orders'), ('shipments_legacy_20260714072446')
+    ) o(tbl)
+  union all
+  -- 고아 SELECT 봉인 — 전면 스캔(I/U/D)의 사각을 명시적으로 덮는다(기대 false).
+  select '고아 SELECT 봉인', o.tbl::text,
+         case
+           when to_regclass('public.' || o.tbl) is null then 'absent'
+           else has_table_privilege('anon', to_regclass('public.' || o.tbl), 'SELECT')::text
          end
     from (values
       ('claims'), ('customs_declarations'), ('orders'), ('order_items'),

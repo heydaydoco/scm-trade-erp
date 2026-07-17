@@ -11,7 +11,11 @@
 --        · 문의    inquiries.product_name  LIKE 'P44H검증%'
 --        · 환율    fx_rates.source         LIKE 'P4.4h%'
 --  절차: 행별 하류 참조 가드(FK·소프트 포인터 전수) → 참조 존재 시 스킵+보고,
---        없으면 DELETE → 사후 잔존 검증(잔존 = 스킵분과 일치해야 정상).
+--        없으면 DELETE → 사후 잔존 검증(잔존 = 스킵분과 일치해야 정상)
+--        + 광역 탐지(ILIKE 비접두 변형까지 — 표식 패턴을 패턴 자신으로 검증하는
+--        순환 맹점 보완) + 고아 SELECT 봉인·고아 참조 뷰 검증(기록).
+--  가드 범위 주석: 고아 7종(claims 등)은 이 가드 목록에 없다 — P4.4h 인구조사
+--        결과 **전 행 0**이라 무엇도 참조할 수 없음이 증명돼 있다(감사표 기록).
 --  순서: 문의 → 품목 → 거래처 → 환율. 테스트 문의가 테스트 거래처·품목을 참조
 --        하므로 문의를 먼저 지워야 거래처·품목 가드가 오탐하지 않는다.
 --  fx 행 삭제 근거(기록): 원칙 4의 보호 대상은 전표가 참조한 이력이다. 이 행들은
@@ -31,6 +35,9 @@ create temp table if not exists p44h_cleanup_report (
   항목 text,
   값   text
 );
+-- 같은 세션 재실행 시 이전 결과가 섞이지 않게 비운다(drop 이 아니라 truncate —
+-- search_path 오해로 동명의 실테이블을 지우는 사고를 구조적으로 배제).
+truncate table p44h_cleanup_report;
 
 do $$
 declare
@@ -144,6 +151,56 @@ begin
            and (select count(*) from public.fx_rates  where source like 'P4.4h%') = 0
           then '✅ 정상 — 잔존은 전부 스킵분'
           else '⚠️ 불일치 — 잔존이 스킵분과 다름(재확인 필요)' end);
+
+  -- ── ⑥ 광역 탐지 — 삭제 패턴을 패턴 자신으로 검증하는 순환 맹점 보완 ────────
+  --  대소문자·비접두 변형(예: '[P4.4h] …', 'p44h…')까지 ILIKE 로 훑는다.
+  --  기대: 거래처·품목·문의는 스킵분과 일치, 환율은 0. 초과분이 나오면 표식이
+  --  어긋난 테스트 행이 살아남은 것 — 특히 환율은 fx_rates_latest 프리필을
+  --  오염시키므로(최신 행이 이긴다) 0 이 아니면 반드시 재확인.
+  insert into p44h_cleanup_report(구분, 항목, 값) values
+    ('광역 탐지', '거래처 ILIKE %p44h% 잔존(스킵분과 일치가 정상)',
+     (select count(*) from public.companies where company_name ilike '%p44h%')::text || ' (스킵 ' || v_skip_co || ')'),
+    ('광역 탐지', '품목 ILIKE %p44h% 잔존(스킵분과 일치가 정상)',
+     (select count(*) from public.products where product_name ilike '%p44h%')::text || ' (스킵 ' || v_skip_item || ')'),
+    ('광역 탐지', '문의 ILIKE %p44h% 잔존(스킵분과 일치가 정상)',
+     (select count(*) from public.inquiries where product_name ilike '%p44h%')::text || ' (스킵 ' || v_skip_inq || ')'),
+    ('광역 탐지', '환율 출처·비고 ILIKE %p4.4h% 잔존(0이 정상)',
+     (select count(*) from public.fx_rates
+       where source ilike '%p4.4h%' or note ilike '%p4.4h%')::text),
+    ('광역 탐지', '판정',
+     case when (select count(*) from public.companies where company_name ilike '%p44h%') = v_skip_co
+           and (select count(*) from public.products  where product_name ilike '%p44h%') = v_skip_item
+           and (select count(*) from public.inquiries where product_name ilike '%p44h%') = v_skip_inq
+           and (select count(*) from public.fx_rates  where source ilike '%p4.4h%' or note ilike '%p4.4h%') = 0
+          then '✅ 정상 — 광역 탐지에도 초과 잔존 없음'
+          else '⚠️ 초과 잔존 — 표식이 어긋난 테스트 행 의심(회신 후 재확인)' end);
+
+  -- ── ⑦ 고아 봉인 검증(기록) — SELECT 회수 여부 + 고아를 참조하는 뷰 부재 ────
+  --  전면 스캔 감사는 INSERT/UPDATE/DELETE 만 보므로 SELECT 봉인은 여기서 기록한다.
+  --  뷰는 소유자 권한으로 실행되어 고아 참조 뷰가 있으면 SELECT 봉인이 우회된다.
+  insert into p44h_cleanup_report(구분, 항목, 값)
+  select '고아 SELECT 봉인', t.tbl,
+         case when to_regclass('public.' || t.tbl) is null then 'absent'
+              else 'anon select=' ||
+                   has_table_privilege('anon', to_regclass('public.' || t.tbl), 'SELECT')::text ||
+                   ' (false 가 정상)'
+         end
+    from (values
+      ('claims'), ('customs_declarations'), ('orders'), ('order_items'),
+      ('payments'), ('production_orders'), ('shipments_legacy_20260714072446')
+    ) t(tbl);
+
+  insert into p44h_cleanup_report(구분, 항목, 값) values
+    ('고아 SELECT 봉인', '고아 참조 뷰 수(0이 정상)',
+     (select count(*)::text from pg_views v
+       where v.schemaname = 'public'
+         and (v.definition ~* '\mclaims\M'
+              or v.definition ~* '\mcustoms_declarations\M'
+              or v.definition ~* '\morders\M'
+              or v.definition ~* '\morder_items\M'
+              or v.definition ~* '\mpayments\M'
+              or v.definition ~* '\mproduction_orders\M'
+              or v.definition ~* '\mshipments_legacy_20260714072446\M')));
 end $$;
 
 -- 마지막 문장 = 결과표 (SQL Editor 는 마지막 SELECT 만 보여준다 — 드래그 복사해 회신)
