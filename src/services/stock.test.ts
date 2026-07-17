@@ -7,6 +7,7 @@ import {
   MOVEMENT_TYPES,
   movementTypeOf,
   isInbound,
+  resolveAdjustmentUom,
 } from "./stock";
 
 /**
@@ -200,5 +201,28 @@ describe("movementTypeOf — 코드 → 라벨·색 조회", () => {
       if (t.code === "REVERSAL") continue; // ± 둘 다 가능
       expect(t.sign).toBe(signedQty(t.code, 1));
     }
+  });
+});
+
+/* ---------- P4.4h 조정 단위 체인 — save_stock_adjustment 거부 경로의 미러 ---------- */
+//  coalesce(products.unit,'PCS') 발명이 제거됐다. 새 체인: 입력 unit →
+//  products.unit → 저장 거부(RAISE). 규칙은 P4.3f 폴백 체인과 동일(단일 진실).
+describe("resolveAdjustmentUom — 조정 단위는 지어내지 않는다", () => {
+  it("입력 unit 이 있으면 그것이 이긴다 (원천 라인이 없는 조정의 1순위)", () => {
+    expect(resolveAdjustmentUom("BOX", "EA")).toBe("BOX");
+  });
+
+  it("입력 unit 이 없으면 품목 마스터 unit", () => {
+    expect(resolveAdjustmentUom(null, "EA")).toBe("EA");
+  });
+
+  it("★둘 다 없으면 null — RPC '단위를 알 수 없어 저장할 수 없습니다' RAISE 에 양보 ('PCS' 발명 금지)", () => {
+    expect(resolveAdjustmentUom(null, null)).toBeNull();
+  });
+
+  it("★공란/공백 = 없음 — '' 마스터가 유효 단위로 오인되지 않는다 (nullif+btrim 규칙)", () => {
+    expect(resolveAdjustmentUom("", "  ")).toBeNull();
+    expect(resolveAdjustmentUom("  ", "EA")).toBe("EA");
+    expect(resolveAdjustmentUom(" BOX ", null)).toBe("BOX"); // trim 해서 채택
   });
 });

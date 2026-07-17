@@ -11,6 +11,7 @@ import {
   shippedQtyOf,
   resolveUom,
   resolveDocLineUom,
+  uomConflict,
   type ShipmentQtyLike,
 } from "./shipmentCargo";
 
@@ -245,5 +246,13 @@ describe("uom 체인(P4.3f) 재사용 — 주문라인 uom → products.unit →
         null,
       ),
     ).toBeNull(); // → RPC 가 '단위를 알 수 없어 저장할 수 없습니다' 로 거부
+  });
+
+  it("★P4.4h 클라-서버 단위 불일치는 저장 거부 — 화물 RPC 도 서버 재해석으로 격상", () => {
+    // P4.4 의 '공란만 거부'에서, 주문 라인 uom → products.unit 서버 재해석 +
+    // 클라 uom 일치 검사로 격상됐다(불일치 = stale 폼 → 새로고침 안내).
+    expect(uomConflict("KG", "EA")).toBe(true);
+    expect(uomConflict(null, "EA")).toBe(false);
+    expect(uomConflict("", "EA")).toBe(false);
   });
 });
