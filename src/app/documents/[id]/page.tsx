@@ -27,12 +27,29 @@ function fmt(n: number): string {
 
 export default async function TradeDocumentDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ issued?: string; w?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const doc = await getTradeDocument(id);
   if (!doc) notFound();
+
+  // 발행 직후 진입(액션 redirect) — 성공 배너 + RPC 경고 표시.
+  const justIssued = sp.issued === "1" && doc.status === "issued";
+  let issueWarnings: string[] = [];
+  if (justIssued && sp.w) {
+    try {
+      const parsed = JSON.parse(sp.w);
+      if (Array.isArray(parsed)) {
+        issueWarnings = parsed.filter((v): v is string => typeof v === "string");
+      }
+    } catch {
+      // 경고 파라미터가 깨져도 문서 표시는 정상 진행
+    }
+  }
 
   const symbol = CURRENCY_SYMBOL[doc.currency] ?? "";
   const money = (n: number) => `${symbol}${fmt(n)} ${doc.currency}`;
@@ -99,6 +116,29 @@ export default async function TradeDocumentDetailPage({
           </Badge>
         </div>
       </div>
+
+      {justIssued && (
+        <div className="mb-6 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <p className="font-medium">
+            무역서류 {doc.docNumber} 가 발행되었습니다 (CI+PL 세트).
+          </p>
+          <p className="mt-1 text-xs">
+            발행 시점 스냅샷으로 고정되었습니다 — 이후 원천 수정과 무관합니다.
+          </p>
+          {issueWarnings.length > 0 && (
+            <div className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-amber-900">
+              <p className="mb-1 text-xs font-medium">
+                발행 경고 (차단 아님 — 확인 권장):
+              </p>
+              <ul className="list-disc pl-5 text-xs">
+                {issueWarnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {cancelled && (
         <div className="mb-6 rounded-md border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">

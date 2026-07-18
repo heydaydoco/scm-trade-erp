@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import Link from "next/link";
 import {
   issueTradeDocumentAction,
   type IssueFormState,
@@ -156,44 +155,8 @@ export function IssueDocumentForm({
     })),
   );
 
-  /* ---------- 발행 성공 — 폼 대신 결과 패널 (경고 포함) ---------- */
-  if (state.ok && state.docId) {
-    return (
-      <div className="space-y-3">
-        <div className="rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          <p className="font-medium">{state.ok}</p>
-          <p className="mt-1 text-xs">
-            발행 시점 스냅샷으로 고정되었습니다 — 이후 원천 수정과 무관합니다.
-          </p>
-        </div>
-        {(state.warnings ?? []).length > 0 && (
-          <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p className="mb-1 font-medium">발행 경고 (차단 아님 — 확인 권장):</p>
-            <ul className="list-disc pl-5 text-xs">
-              {(state.warnings ?? []).map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <div className="flex gap-4 text-sm">
-          <Link
-            href={`/documents/${state.docId}`}
-            className="rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white hover:bg-zinc-700"
-          >
-            문서 보기 → {state.docNumber}
-          </Link>
-          <Link
-            href={`/shipments/${shipmentId}`}
-            className="px-2 py-2 text-zinc-600 hover:text-blue-700 hover:underline"
-          >
-            ← 선적 상세로
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
+  // 발행 성공은 액션이 문서 상세로 redirect 한다(성공 배너·경고는 상세가 표시)
+  // — 이 컴포넌트는 오류 표면화만 담당한다.
   return (
     <form action={formAction}>
       <fieldset disabled={pending} className="m-0 border-0 p-0 space-y-4">

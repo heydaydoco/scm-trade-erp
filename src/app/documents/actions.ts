@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   cancelTradeDocument,
   saveTradeDocument,
@@ -13,13 +14,14 @@ import type { TradeDocumentLineInput } from "@/services/types";
  * 검증·정리해 서비스로 넘기고, 서버 거부 메시지는 그대로 표면화한다.
  */
 
+/**
+ * 발행 액션 상태 — 성공은 상태가 아니라 **redirect** 다(문서 상세로).
+ * revalidatePath 가 현재 페이지(/documents/new)를 재렌더하면 방금 생긴 활성
+ * 문서 때문에 폼이 중복 가드 패널로 교체돼 성공 패널이 증발한다(E2E 발견) —
+ * 출고 생성과 같은 관례(revalidate→redirect)로 상세에서 성공 배너+경고를 보인다.
+ */
 export interface IssueFormState {
   error?: string;
-  ok?: string;
-  docId?: string;
-  docNumber?: string;
-  /** RPC 반환 경고(단가 0 라인·할인 미배분 등) — 발행 결과에 표시. */
-  warnings?: string[];
 }
 
 export interface CancelDocFormState {
@@ -94,10 +96,9 @@ export async function issueTradeDocumentAction(
   }
 
   let docId: string;
-  let docNumber: string;
   let warnings: string[];
   try {
-    ({ id: docId, docNumber, warnings } = await saveTradeDocument({
+    ({ id: docId, warnings } = await saveTradeDocument({
       shipmentId,
       customerId,
       currency,
@@ -118,12 +119,12 @@ export async function issueTradeDocumentAction(
   revalidatePath(`/documents/${docId}`);
   revalidatePath(`/shipments/${shipmentId}`);
 
-  return {
-    ok: `무역서류 ${docNumber} 가 발행되었습니다.`,
-    docId,
-    docNumber,
-    warnings,
-  };
+  // 성공 배너·RPC 경고는 문서 상세가 searchParams 로 받아 표시한다.
+  const q =
+    warnings.length > 0
+      ? `&w=${encodeURIComponent(JSON.stringify(warnings))}`
+      : "";
+  redirect(`/documents/${docId}?issued=1${q}`);
 }
 
 export async function cancelTradeDocumentAction(
