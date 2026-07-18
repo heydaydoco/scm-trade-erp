@@ -339,6 +339,9 @@ shipment_lines(id, shipment_id, line_no, ref_order_line_id, item_id, hs_code,
 shipment_parties(shipment_id, role, name, address)
 milestones(id, shipment_id, type, planned_date, actual_date, tz, memo)  -- 기일 엔진 원천
 trade_documents(id, shipment_id, doc_type[CI/PL/BL/CO/LC], doc_number, doc_date, file, status)
+   -- ※ P4.5 실구현 정정(뼈대 괴리 명시): 발행 1회 = **CI+PL 세트 = 1행**(doc_type 'CI' 고정·번호 1개
+   --    CI-YYYYMM-NNN, PL 은 자체 번호 없이 Invoice No. 참조) + trade_document_lines 라인 전량 스냅샷.
+   --    `file` 컬럼 없음 — 파일 보관이 아니라 스냅샷 실체화+인쇄 뷰다. BL/CO/LC 는 미구현(후속 판단).
 lc_terms(shipment_id, lc_number, issuing_bank, amount, tolerance,
          expiry_date, latest_shipment_date, presentation_days, partial_allowed, transship_allowed)
 ```
@@ -443,7 +446,19 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   - 🔑 **감사 SELECT 규율 격상 (이후 모든 마이그레이션에 적용)** — 감사는 **전면 스캔형**만 쓴다: public 전 객체(테이블·뷰·matview) × anon/authenticated × INSERT/UPDATE/DELETE 를 `has_table_privilege(role, oid, priv)` 로 훑어 **위반 0행 게이트** + **스캔 객체 총수 요약**(위반 0행만 달랑 나오는 공허통과 방지)을 함께 출력한다. **알려진 목록 나열형 금지** — P4.4 까지의 목록형 감사는 고아 7종의 쓰기 개방 42건을 한 번도 못 봤다. ⚠️ 함정: 격상 스캔이 처음 잡는 위반은 "이 마이그레이션이 만든 문제인가, 원래 열려 있던 것의 첫 노출인가"부터 판별할 것(이번 42건은 전부 후자 — 봉인 대상 임의 확장 없이 멈추고 보고가 정답이었다).
   - 🔑 **E2E 라이브 검증 데이터 관례 (성문화)** — ① 표식 명명 필수(예: 'P44H검증 …', 출처 'P4.4h …') ② 종료 시 잔여물 목록 보고 ③ 정리는 **아키텍트 승인 하의 1회성 SQL**(마이그레이션 밖·레포 기록·행별 참조 가드+사후 검증+광역 탐지 포함)만 — 클로드 코드 임의 삭제 금지. 근거: 추가 전용 대장(fx)은 남긴 테스트 행이 최신 뷰·프리필을 오염시키는데, 전표가 참조한 적 없는 테스트 주입값은 원칙 4(불변)의 보호 대상이 아니다.
   - ⚠️ **JS `trim()` ⊃ PG `btrim()` 비대칭 (관찰 기록 — 조치 없음)** — 이색 공백(탭 등)은 JS 만 없앤다. 직접 RPC 로 이색 공백 단위가 들어와도 결과는 데이터 손상이 아니라 **안전한 거부**(uom 불일치 RAISE)이므로 잠긴 RPC 재수술 없이 관찰만 기록한다.
-  - **다음: P4.5** — 무역서류(CI/PL) 생성기 → P4.6 문서 흐름 추적 화면.
+  - ✅ **P4.5 무역서류(CI/PL) 실체화 완료·종결** (2026-07-18, 커밋 `65955b1`(a 마이그레이션)→`b9d7c5a`(b 서비스)→`5f49f06`(c0 marks RPC)→`0df8fcf`(c 발행 UI)→`aa1123f`(d 인쇄 2벌)→`d2c7948`(적대검증 교정)→`9061669`(E2E 교정)→`7a9fb4f`·`5a9349d`(정리 SQL)) —
+    - **아키텍처**: 발행 1회 = **CI+PL 세트 = `trade_documents` 1행 = 번호 1개**(`CI-YYYYMM-NNN`, 카운터 키 `trade_document` — D1·R2). **발행 후 불변** — 수정 없음, 취소(사유 필수, issued→cancelled — R4)·재발행(새 번호)만. **전량 스냅샷**(D2·D6): Seller(config)·Buyer(companies)·Consignee/Notify(shipment_parties)·선적정보·화인·포장(`packages_snapshot`)·금액 3종·라인 — 상세·인쇄는 **스냅샷 컬럼만 소비**(라이브 마스터 재조회 0, 코드 수준 보장). 생성 단위 = **(선적×고객×통화)·SO 라인만**(D4), 서버가 원천 체인(shipment_lines→so_lines→products)에서 **재해석·재계산**(클라 값 불신)·라인 단위 스코프 강제. D3 할인 = Σ 주문별 round2(discount×문서포함금액÷주문전체금액). **부분 문서 스코프**(R-정정): 포장·중량·수량 집계는 "문서 포함 라인"만 — 혼합 선적에서 타 고객 물량 혼입 구조적 불가(라이브 실증). 중량·포장 **all-or-nothing**(D5·R1 — 부분 입력은 컬럼·TOTAL·섹션 생략, 부분합 왜곡 방지). Seller 플레이스홀더/공란 **발행 거부**(D7 — 서버가 거부, 발행이 막히는 것이 정상). 활성 문서 **잠금 가드 3종**: shipment_lines/parties I/U/D + shipments cancelled 전환 차단(즉시형 트리거), (선적×고객×통화) 활성 중복은 RPC 검증+부분 유니크 인덱스 2중 봉쇄. **상태 소문자 저장·화면만 대문자 표기**(R3 — `issued`/`cancelled`, 뱃지 `ISSUED`/`CANCELLED`).
+    - **`update_shipment_marks`(P4.5c0, 쓰기 RPC 25종째)**: marks 의 유일 경로였던 `save_shipment_cargo` 가 라인 diff-upsert·당사자 전량교체를 항상 수행해 활성 문서 선적에서 marks 만 고쳐도 가드에 **부수 차단**되는 문제의 해소 전용 — `shipping_marks`(+updated_at)만 갱신, 빈 값 허용(지우기 정당), 취소 선적 거부(선적번호 포함 식별 메시지). **비-cancelled 상태 전환(운항 진행)은 `save_shipment` 경로(헤더+주문연결+마일스톤만)라 가드 비대상임을 확인 — 전환 RPC 불신설**(정확한 절제). UI 는 화인 독립 저장 카드로 분리, 일괄 저장 폼은 '마지막 저장 정본'을 실어 화인을 변경하지 않는다(초안 무단 커밋 방지).
+    - **공용 인쇄 레이아웃 신설**(`printDoc.module.css` — @page A4·thead `table-header-group` 반복·행/블록 break-inside:avoid 최소 규칙 + `PrintDocShell` 툴바·CANCELLED 배너): **CI/PL 만 사용, 기존 인쇄 5벌 불가촉**(이관은 백로그 유지).
+    - **검증**: 적대검증 29 에이전트(8렌즈+발견별 3인 반박) — 발번 원자성·취소재발행·잠금+marks·출생봉인·부분 스코프 5축 무결 논증, 확정 6건 전부 교정. E2E 라이브(P45검증 표식) 전 시나리오 + 직접 REST 차단(5테이블 42501) + 배포 스모크 7/7(콘솔 0). 테스트 218.
+    - **정리**(`scripts/p4.5_cleanup_test_rows.sql`, 오너 Run 완료): 문서 4+라인 7·선적 1식(화물 3·당사자 3·연결 2)·수주 2+라인 3·품목 2·거래처 2 삭제·스킵 0·광역 잔존 0·객체 31·위반 0 유지. audit_log 25행 잔존은 불변 기록으로 정상.
+  - 🔑 **발번 공백 관례 (성문화)** — 소비된 번호(P4.5 정리 후 CI 202607 카운터 last_no=4 등)는 **롤백·재사용 금지**. 번호 공백은 정직한 상태이고, 롤백은 재사용 충돌 위험+가짜 청결이다. 공백 사유는 정리 스크립트의 레포 기록이 감사 기록이다.
+  - 🔑 **JS round vs PG round(numeric,2) — .xx5 경계 함정** — `Math.round((n+ε)*100)/100` 는 double 곱셈 오차로 정확 반값(0.5×4.27=2.135)을 **내림**하지만 서버 numeric 은 **half away from zero** 로 올림(2.14) → 미리보기≠저장값 1센트. 서버 산식을 미러하는 클라 계산은 **서버 동치 십진 산술**(BigInt 스케일 정수·정확 유리수 반올림 — `tradeDocLogic`)로 할 것. 음수 반올림 방향(-0.025→-0.03)도 동일 함정.
+  - 🔑 **인쇄물 현지화 라벨 금지** — 대외 서류(CI/PL 등) 인쇄는 **스냅샷 원문만** 출력한다(`labelOf` 치환 금지). 라벨 테이블을 나중에 고치면 기발행 문서의 재인쇄가 달라져 **재인쇄 불변 계약 위반**이고, 영문 서류에 한국어 라벨이 섞인다. 내부 화면 라벨 표시는 무방 — 인쇄 표면만 원문.
+  - 🔑 **revalidate 재렌더의 성공 패널 증발** — 서버 액션 성공이 현재 페이지의 렌더 전제(폼 노출 조건)를 바꾸면, revalidatePath 가 현재 라우트를 서버 재렌더하면서 폼 컴포넌트가 다른 분기(가드 패널)로 교체돼 `useActionState` 성공 상태가 **증발**한다. 성공 피드백은 상태가 아니라 **redirect+도착 페이지 배너**(searchParams — 예: `?issued=1&w=경고JSON`)로 전달할 것(출고 생성 관례의 확장).
+  - 🔑 **E2E 폴백 전례 (Seller 미설정)** — config 플레이스홀더 상태에서의 발행 검증은 아키텍트 사전 승인 하에 **표식 임시값('P45-TEST SELLER' 계열) 투입 → 발행물 전량 취소 → 정리 스크립트 제거** 로 수행했고, config 는 플레이스홀더로 원복·임시값은 커밋에 미포함(확인 완료). 동일 상황 재발 시 이 전례를 따른다.
+  - **백로그**: ① 기존 인쇄 5벌의 공용 레이아웃 이관(P4.5 명시 제외분) ② 읽기 표시 폴백 'PCS' 제거(기존 유지) ③ **Seller 실값 미입력(오너 대기)** — `src/config/company.ts` 가 플레이스홀더인 동안 발행은 D7 거부가 정상, **실발행 전 필수 입력**.
+  - **다음: P4.6** — 문서 흐름 추적 화면.
 - **P5 — 통관 + 로트/시리얼 + 검수 + BOM**: 수출입 통관, 추적성, QC, BOM
 - **P6 — ATP/할당/백오더 + L/C + RMA + 알림엔진**: 공급 제약 처리, 결제, 반품
 - **P7 — RFQ/벤더평가 + FTA + 결재워크플로 + 실사**: 구매 고도화, 원산지, 승인
@@ -467,4 +482,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v2.5 · P0~P3 완료 + **P4.0~P4.4h 완료·종결**(2026-07-17) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / Vitest(테스트 172) / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / **P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로(24종)·직접 REST 쓰기 사망·신설 RPC 4종(save_company·save_item·save_fx_rate·save_inquiry)·uom 서버 재해석(H3 종결)·고아 7종 DROP·전면 스캔 감사 격상(29객체·위반 0)**. 다음: P4.5 무역서류(CI/PL) → P4.6 문서 흐름 추적*
+*문서 버전: v2.6 · P0~P3 완료 + **P4.0~P4.5 완료·종결**(2026-07-18) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** (객체 31·위반 0). 다음: P4.6 문서 흐름 추적*
