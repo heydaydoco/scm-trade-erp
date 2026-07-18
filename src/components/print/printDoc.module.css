@@ -1,0 +1,24 @@
+/*
+ * 공용 인쇄 레이아웃 CSS (P4.5 커밋 d) — CI/PL 전용 최소 규칙만.
+ *
+ * ⚠️ 기존 인쇄 5벌(견적 PI·주문확인·발주·거래명세·S/I)은 불가촉 — 이 모듈을
+ *    import 하지 않는다. 본문 이관은 후속 하위단계(명시 제외).
+ * ⚠️ @page 는 스코프가 없는 전역 at-rule 이다 — 이 모듈은 CI/PL 인쇄 라우트만
+ *    import 하므로 실사용 경로에서는 CI/PL 인쇄에만 적용된다.
+ */
+
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+
+/* 페이지 넘김 시 표 헤더 반복 (table-header-group — 브라우저 인쇄 규칙) */
+.docTable thead {
+  display: table-header-group;
+}
+
+/* 라인 행·서명/은행 블록의 페이지 경계 중간 절단 방지 */
+.docTable tr,
+.avoidBreak {
+  break-inside: avoid;
+}
