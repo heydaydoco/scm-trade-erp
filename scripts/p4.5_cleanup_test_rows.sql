@@ -326,8 +326,8 @@ begin
           else v_cnt::text || ' — ⚠️ 잔존(지우지 말고 이 표를 회신 — 아키텍트 재판정)' end),
     ('3.광역 잔존(0이 정상)', 'audit_log 내 P45 관련 행(불변 기록 — 잔존이 정상)',
      (select count(*)::text from public.audit_log
-       where before::text ilike '%p45검증%' or after::text ilike '%p45검증%'
-          or before::text ilike '%p45-test%' or after::text ilike '%p45-test%'));
+       where before_json::text ilike '%p45검증%' or after_json::text ilike '%p45검증%'
+          or before_json::text ilike '%p45-test%' or after_json::text ilike '%p45-test%'));
 
   -- ── 4.전면 스캔 요약 — 정리가 봉인을 건드리지 않았음(객체 31·위반 0 유지) ─────
   insert into p45_cleanup_report(구분, 항목, 값)
