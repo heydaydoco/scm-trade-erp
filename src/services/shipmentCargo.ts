@@ -451,3 +451,27 @@ export async function saveShipmentCargo(input: {
   const r = data as { lineCount: number; partyCount: number };
   return { lineCount: r.lineCount, partyCount: r.partyCount };
 }
+
+/**
+ * 화인(Shipping Marks)만 저장 — P4.5(c0) 전용 RPC `update_shipment_marks`.
+ *
+ * ⚠️ 왜 별도 경로인가: save_shipment_cargo 는 라인 diff-upsert·당사자 전량교체를
+ *    **항상** 수행하므로, 활성(issued) 무역서류가 있는 선적에서는 marks 만 고쳐도
+ *    P4.5 잠금 가드에 걸려 저장 전체가 차단된다. marks 는 발행 시점에 문서로
+ *    스냅샷되는 필드라(D2) 가드 비대상 — 이 전용 경로는 shipments 의
+ *    shipping_marks(+updated_at)만 갱신한다(타 컬럼 불가촉).
+ *    빈 값 허용 — 지우기는 정당한 조작(서버가 공백→NULL 정규화).
+ */
+export async function updateShipmentMarks(
+  shipmentId: string,
+  marks: string | null,
+): Promise<{ shippingMarks: string | null }> {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("update_shipment_marks", {
+    p_shipment_id: shipmentId,
+    p_marks: marks,
+  });
+  if (error) throw new Error(`화인(Shipping Marks) 저장 실패: ${error.message}`);
+  const r = data as { shippingMarks: string | null };
+  return { shippingMarks: r.shippingMarks ?? null };
+}

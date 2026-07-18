@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   saveShipmentCargo,
   getShipmentCargo,
+  updateShipmentMarks,
   type CargoLineInput,
   type ShipmentPartyInput,
 } from "@/services/shipmentCargo";
@@ -156,4 +157,46 @@ export async function saveShipmentCargoAction(
       savedAt: Date.now(),
     };
   }
+}
+
+/**
+ * 화인(Shipping Marks)만 저장 — P4.5(c0) 전용 RPC 경로.
+ * 위 일괄 저장(saveShipmentCargoAction)과 **경계 분리**: 이 액션은 라인·당사자를
+ * 건드리지 않으므로 활성 무역서류가 있는 선적에서도 성공한다(가드 비대상).
+ */
+export interface MarksFormState {
+  error?: string;
+  ok?: string;
+  /** 서버 정규화 결과(공백→null) — 클라이언트 상태 동기화용. */
+  savedMarks?: string | null;
+  savedAt?: number;
+}
+
+export async function updateShipmentMarksAction(
+  _prev: MarksFormState,
+  formData: FormData,
+): Promise<MarksFormState> {
+  const shipmentId = str(formData.get("shipmentId"));
+  if (!shipmentId) return { error: "선적이 지정되지 않았습니다." };
+
+  // 빈 값 허용 — 지우기는 정당(서버가 공백→NULL 정규화). trim 하지 않고 원문 전달.
+  const raw = formData.get("shippingMarks");
+  const marks = typeof raw === "string" ? raw : null;
+
+  let savedMarks: string | null = null;
+  try {
+    ({ shippingMarks: savedMarks } = await updateShipmentMarks(shipmentId, marks));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "화인 저장에 실패했습니다." };
+  }
+
+  // 화인은 선적 상세(화물 카드)와 S/I 인쇄가 소비한다 — 기발행 무역서류는 스냅샷이라 불변.
+  revalidatePath(`/shipments/${shipmentId}`);
+  revalidatePath(`/shipments/${shipmentId}/print`);
+
+  return {
+    ok: "화인(Shipping Marks)이 저장되었습니다.",
+    savedMarks,
+    savedAt: Date.now(),
+  };
 }

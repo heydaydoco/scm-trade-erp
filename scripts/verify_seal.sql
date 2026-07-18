@@ -16,7 +16,8 @@
 --      save_purchase_order·save_shipment·save_goods_receipt·save_delivery·
 --      save_shipment_cargo·save_stock_adjustment·reverse_stock_movement·
 --      cancel_* · save_company·save_item·save_fx_rate·save_inquiry (P4.4h 신설 4종)·
---      save_trade_document·cancel_trade_document (P4.5 신설 2종).
+--      save_trade_document·cancel_trade_document (P4.5 신설 2종)·
+--      update_shipment_marks (P4.5c0 신설 — marks 전용, 활성 문서 가드 비대상).
 --    · 스캔은 동적 전면 스캔이라 P4.5 신규 2테이블(trade_documents·trade_document_lines)도
 --      자동 포함된다 — 객체 총수 기대값은 29 → 31.
 --    · '스캔 요약' — 객체 총수가 0이면 스캔 자체가 실패한 것(공허통과 방지 수치).

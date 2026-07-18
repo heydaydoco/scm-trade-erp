@@ -3,7 +3,9 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import {
   saveShipmentCargoAction,
+  updateShipmentMarksAction,
   type CargoFormState,
+  type MarksFormState,
 } from "./cargoActions";
 import {
   planCargoLineDiff,
@@ -73,6 +75,11 @@ export function CargoCard({
     saveShipmentCargoAction,
     {},
   );
+  // 화인 전용 저장 (P4.5 c0) — 일괄 저장과 경계 분리된 별도 액션·별도 pending.
+  const [marksState, marksFormAction, marksPending] = useActionState<
+    MarksFormState,
+    FormData
+  >(updateShipmentMarksAction, {});
 
   const byLineId = new Map(shippable.map((s) => [s.orderLineId, s]));
   const counter = useRef(0);
@@ -149,6 +156,16 @@ export function CargoCard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.savedAt]);
+
+  // 화인 전용 저장 성공 → 서버 정규화 결과(공백→null)로 동기화.
+  const lastMarksSync = useRef<number>(0);
+  useEffect(() => {
+    if (marksState.savedAt && marksState.savedAt !== lastMarksSync.current) {
+      lastMarksSync.current = marksState.savedAt;
+      setMarks(marksState.savedMarks ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marksState.savedAt]);
 
   function patchRow(key: string, patch: Partial<CargoRow>) {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -583,20 +600,9 @@ export function CargoCard({
           </div>
         </div>
 
-        {/* ---------- Shipping Marks ---------- */}
-        <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Shipping Marks (화인)
-          </p>
-          <textarea
-            name="shippingMarks"
-            value={marks}
-            onChange={(e) => setMarks(e.target.value)}
-            rows={3}
-            placeholder={"예)\nACME / LONDON\nC/NO. 1-10\nMADE IN KOREA"}
-            className={inputClass}
-          />
-        </div>
+        {/* 화인은 아래 별도 카드에서 편집·저장한다(P4.5 c0 경계 분리) — 일괄 저장은
+            잠긴 RPC 시그니처(p_shipping_marks)에 현재 화면 값을 그대로 실어 보낸다. */}
+        <input type="hidden" name="shippingMarks" value={marks} />
 
         <div className="flex items-center gap-3">
           <button
@@ -611,6 +617,51 @@ export function CargoCard({
             않음 — P4.3e 규칙).
           </span>
         </div>
+        </fieldset>
+      </form>
+
+      {/* ---------- Shipping Marks — 독립 저장 카드 (P4.5 c0) ---------- */}
+      <form action={marksFormAction}>
+        <fieldset
+          disabled={marksPending}
+          className="m-0 rounded-lg border border-slate-200 p-3"
+        >
+          <input type="hidden" name="shipmentId" value={shipmentId} />
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Shipping Marks (화인)
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            화인은 위 [화물 내역 저장]과 <b>분리된 전용 경로</b>로 저장됩니다 —
+            무역서류가 발행된 선적에서도 화인만은 수정할 수 있습니다(기발행 문서의
+            화인 스냅샷은 바뀌지 않습니다). 비우고 저장하면 화인이 지워집니다.
+          </p>
+          {marksState.error && (
+            <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              {marksState.error}
+            </p>
+          )}
+          {marksState.ok && !marksState.error && (
+            <p className="mb-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {marksState.ok}
+            </p>
+          )}
+          <textarea
+            name="shippingMarks"
+            value={marks}
+            onChange={(e) => setMarks(e.target.value)}
+            rows={3}
+            placeholder={"예)\nACME / LONDON\nC/NO. 1-10\nMADE IN KOREA"}
+            className={inputClass}
+          />
+          <div className="mt-2">
+            <button
+              type="submit"
+              disabled={marksPending}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {marksPending ? "저장 중…" : "화인만 저장"}
+            </button>
+          </div>
         </fieldset>
       </form>
     </section>
