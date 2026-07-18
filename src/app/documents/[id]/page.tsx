@@ -19,8 +19,10 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   cancelled: "red",
 };
 
+// 최대 6자리 — 수량·단가·중량 스냅샷 원문 보존(기본 절사로 0.0004 가 "0"이 되는
+// 유실 방지, 적대검증 교정). 금액은 round2 저장이라 어차피 2자리 이하다.
 function fmt(n: number): string {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
 export default async function TradeDocumentDetailPage({

@@ -349,3 +349,70 @@ describe("discountEntriesOf — 주문별 문서 포함 금액 누적 (서버 v_
     expect(allocateDiscounts(entries).discount).toBe(40);
   });
 });
+
+/* ---------- ⑦ 적대검증 교정 — pg round(numeric,2) 동치 (half away from zero·십진 정확) ---------- */
+
+describe("lineAmount — 서버 round(qty×단가, 2) 와 .xx5 경계에서도 동치", () => {
+  it("★0.5 × 4.27 = 2.135 → 2.14 (double 곱 2.1349…의 내림 방지)", () => {
+    expect(lineAmount(0.5, 4.27)).toBe(2.14);
+  });
+
+  it("★8.7 × 1.15 = 10.005 → 10.01", () => {
+    expect(lineAmount(8.7, 1.15)).toBe(10.01);
+  });
+
+  it("경계 아닌 값은 기존과 동일", () => {
+    expect(lineAmount(3, 19.99)).toBe(59.97);
+    expect(lineAmount(0.1, 3)).toBe(0.3);
+  });
+});
+
+describe("allocateDiscounts — 서버 round(discount×docAmount÷orderTotal, 2) 동치", () => {
+  it("★2.90 × 3 ÷ 4 = 2.175 → 2.18 (half away from zero)", () => {
+    const r = allocateDiscounts([
+      { soNumber: "SO-1", discount: 2.9, docAmount: 3, orderTotal: 4 },
+    ]);
+    expect(r.discount).toBe(2.18);
+  });
+
+  it("★음수 할인도 0 반대쪽으로 — -0.05 × 1 ÷ 2 = -0.025 → -0.03", () => {
+    const r = allocateDiscounts([
+      { soNumber: "SO-1", discount: -0.05, docAmount: 1, orderTotal: 2 },
+    ]);
+    expect(r.discount).toBe(-0.03);
+    expect(r.warnings).toHaveLength(1); // 음수 경고는 유지
+  });
+
+  it("-0.03 × 1 ÷ 2 = -0.015 → -0.02", () => {
+    const r = allocateDiscounts([
+      { soNumber: "SO-1", discount: -0.03, docAmount: 1, orderTotal: 2 },
+    ]);
+    expect(r.discount).toBe(-0.02);
+  });
+
+  it("비종결 소수(1/3)는 양쪽 다 3.33 — 기존 동작 유지", () => {
+    const r = allocateDiscounts([
+      { soNumber: "SO-1", discount: 10, docAmount: 1, orderTotal: 3 },
+    ]);
+    expect(r.discount).toBe(3.33);
+  });
+});
+
+describe("subtotalOf/discountEntriesOf — .xx5 라인 누적도 서버와 동치", () => {
+  it("★subtotal: 2.135 라인 2건 → 2.14 + 2.14 = 4.28", () => {
+    expect(
+      subtotalOf([
+        { qty: 0.5, unitPrice: 4.27 },
+        { qty: 0.5, unitPrice: 4.27 },
+      ]),
+    ).toBe(4.28);
+  });
+
+  it("★discountEntriesOf docAmount 도 라인별 서버 반올림 후 누적", () => {
+    const entries = discountEntriesOf([
+      { soId: "so-1", soNumber: "SO-1", qty: 0.5, unitPrice: 4.27, soDiscount: 0, soOrderTotal: 10 },
+      { soId: "so-1", soNumber: "SO-1", qty: 8.7, unitPrice: 1.15, soDiscount: 0, soOrderTotal: 10 },
+    ]);
+    expect(entries[0].docAmount).toBe(12.15); // 2.14 + 10.01
+  });
+});

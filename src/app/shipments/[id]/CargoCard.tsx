@@ -140,6 +140,10 @@ export function CargoCard({
       : toPartiesStrict(initialParties),
   );
   const [marks, setMarks] = useState(initialMarks ?? "");
+  // 화인의 '마지막 저장 정본' — 일괄 저장 폼은 이 값을 실어 marks 를 **변경하지
+  // 않는다**(편집 중 초안의 무단 커밋 방지 — 적대검증 교정). 갱신 주체는 화인
+  // 전용 저장(성공 시 서버 정규화값)과 일괄 저장 동기화뿐이다.
+  const [marksBaseline, setMarksBaseline] = useState(initialMarks ?? "");
   // 저장된 정본(라인 id 세트)의 기준 — diff 미리보기·초과 계산의 축.
   const [savedLines, setSavedLines] = useState<ShipmentCargoLine[]>(initialLines);
 
@@ -151,18 +155,21 @@ export function CargoCard({
       lastSync.current = state.savedAt;
       setRows(toRows(state.saved.lines));
       setParties(toPartiesStrict(state.saved.parties));
-      setMarks(state.saved.shippingMarks ?? "");
+      // marks 는 초안(textarea)을 건드리지 않는다 — 일괄 저장 pending 중 화인
+      // 카드에 타이핑한 내용의 무경고 증발 방지(적대검증 교정). 정본만 동기화.
+      setMarksBaseline(state.saved.shippingMarks ?? "");
       setSavedLines(state.saved.lines);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.savedAt]);
 
-  // 화인 전용 저장 성공 → 서버 정규화 결과(공백→null)로 동기화.
+  // 화인 전용 저장 성공 → 서버 정규화 결과(공백→null)로 초안·정본 동기화.
   const lastMarksSync = useRef<number>(0);
   useEffect(() => {
     if (marksState.savedAt && marksState.savedAt !== lastMarksSync.current) {
       lastMarksSync.current = marksState.savedAt;
       setMarks(marksState.savedMarks ?? "");
+      setMarksBaseline(marksState.savedMarks ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marksState.savedAt]);
@@ -601,8 +608,9 @@ export function CargoCard({
         </div>
 
         {/* 화인은 아래 별도 카드에서 편집·저장한다(P4.5 c0 경계 분리) — 일괄 저장은
-            잠긴 RPC 시그니처(p_shipping_marks)에 현재 화면 값을 그대로 실어 보낸다. */}
-        <input type="hidden" name="shippingMarks" value={marks} />
+            잠긴 RPC 시그니처(p_shipping_marks)에 **마지막 저장 정본**을 실어 화인을
+            변경하지 않는다(편집 중 초안의 무단 커밋 방지 — 적대검증 교정). */}
+        <input type="hidden" name="shippingMarks" value={marksBaseline} />
 
         <div className="flex items-center gap-3">
           <button

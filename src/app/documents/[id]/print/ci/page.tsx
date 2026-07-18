@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getTradeDocument } from "@/services/tradeDocuments";
-import { CURRENCY_SYMBOL, INCOTERMS, PAYMENT_TERMS, labelOf } from "@/services/codes";
+import { CURRENCY_SYMBOL } from "@/services/codes";
 import { PrintDocShell } from "@/components/print/PrintDocShell";
 import styles from "@/components/print/printDoc.module.css";
 import { PartyBlocks, ShipmentInfoGrid } from "../PartyBlocks";
@@ -25,11 +25,20 @@ export default async function CommercialInvoicePrintPage({
   if (!doc) notFound();
 
   const symbol = CURRENCY_SYMBOL[doc.currency] ?? "";
+  // 금액(round2 저장)은 2자리 고정, 수량·단가는 스냅샷 원문 그대로(최대 6자리 —
+  // 기본 3자리 절사로 0.0004 가 "0"이 되는 유실 방지, 적대검증 교정).
   const money = (n: number) =>
     `${symbol}${n.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+  const price = (n: number) =>
+    `${symbol}${n.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6,
+    })}`;
+  const qty = (n: number) =>
+    n.toLocaleString(undefined, { maximumFractionDigits: 6 });
 
   // HS·Origin 열은 전 라인 공란이면 열 자체를 생략(셀 공란은 허용) — 스펙 d.
   const hasHs = doc.lines.some((l) => l.hsCode);
@@ -61,15 +70,17 @@ export default async function CommercialInvoicePrintPage({
         <p>
           <span className="font-semibold">Currency:</span> {doc.currency}
         </p>
+        {/* 스냅샷 원문 그대로 인쇄(라벨 치환 금지 — 적대검증 교정): 대외 영문
+            서류에 한국어 라벨이 섞이지 않고, 코드표를 나중에 고쳐도 재인쇄가
+            최초 인쇄와 동일하다(재인쇄 불변). */}
         <p>
           <span className="font-semibold">Incoterms:</span>{" "}
           {doc.incoterm
-            ? `${labelOf(INCOTERMS, doc.incoterm)}${doc.incotermPlace ? ` ${doc.incotermPlace}` : ""}`
+            ? `${doc.incoterm}${doc.incotermPlace ? ` ${doc.incotermPlace}` : ""}`
             : "-"}
         </p>
         <p>
-          <span className="font-semibold">Payment:</span>{" "}
-          {doc.paymentTerms ? labelOf(PAYMENT_TERMS, doc.paymentTerms) : "-"}
+          <span className="font-semibold">Payment:</span> {doc.paymentTerms ?? "-"}
         </p>
       </div>
 
@@ -124,12 +135,10 @@ export default async function CommercialInvoicePrintPage({
               {hasOrigin && (
                 <td className="py-2 pr-2 text-xs">{l.originCountry ?? ""}</td>
               )}
-              <td className="py-2 pr-2 text-right tabular-nums">
-                {l.qty.toLocaleString()}
-              </td>
+              <td className="py-2 pr-2 text-right tabular-nums">{qty(l.qty)}</td>
               <td className="py-2 pr-2">{l.uom}</td>
               <td className="py-2 pr-2 text-right tabular-nums">
-                {money(l.unitPrice)}
+                {price(l.unitPrice)}
               </td>
               <td className="py-2 text-right tabular-nums">{money(l.amount)}</td>
             </tr>

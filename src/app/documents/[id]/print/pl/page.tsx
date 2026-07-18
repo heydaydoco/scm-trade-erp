@@ -123,9 +123,8 @@ export default async function PackingListPrintPage({
                     </span>
                   )}
                 </td>
-                <td className="py-2 pr-2 text-right tabular-nums">
-                  {l.qty.toLocaleString()}
-                </td>
+                {/* 수량은 스냅샷 원문 그대로(최대 6자리 — 기본 3자리 절사 방지) */}
+                <td className="py-2 pr-2 text-right tabular-nums">{fmt(l.qty)}</td>
                 <td className="py-2 pr-2">{l.uom}</td>
                 {showPackages && (
                   <td className="py-2 pr-2 text-right tabular-nums">
@@ -156,7 +155,7 @@ export default async function PackingListPrintPage({
           <div className="flex justify-between gap-8">
             <span className="font-semibold">TOTAL Qty</span>
             <span className="tabular-nums">
-              {qtyTotals.map((t) => `${t.qty.toLocaleString()} ${t.uom}`).join(" · ")}
+              {qtyTotals.map((t) => `${fmt(t.qty)} ${t.uom}`).join(" · ")}
             </span>
           </div>
           {showPackages && packageTotals.length > 0 && (
