@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateDiscounts,
+  discountEntriesOf,
   issuableCombos,
   lineAmount,
+  linesForCombo,
   packingFillMode,
   subtotalOf,
   totalOf,
@@ -10,6 +12,7 @@ import {
   weightTotal,
   zeroPriceCount,
   type ComboSourceLine,
+  type DiscountSourceLine,
 } from "./tradeDocLogic";
 
 /* ---------- ① D3 할인 비례 배분 — 서버(save_trade_document) 산식 미러 ---------- */
@@ -240,5 +243,109 @@ describe("packingFillMode — 포함 라인 전원이 (수량+유형) 보유 시
   it("전무 = none → 섹션 생략", () => {
     expect(packingFillMode([{ packageCount: null, packageType: null }])).toBe("none");
     expect(packingFillMode([])).toBe("none");
+  });
+});
+
+/* ---------- ⑥ (커밋 c) 발행 폼 결선용 — 조합 스코프 필터·할인 엔트리 구성 ---------- */
+
+describe("linesForCombo — (선적×고객×통화) 스코프의 클라이언트 미러 (D4)", () => {
+  const mk = (
+    orderType: "SO" | "PO",
+    customerId: string | null,
+    currency: string | null,
+    tag: string,
+  ) => ({ orderType, customerId, currency, tag });
+
+  it("★같은 (고객,통화) SO 라인만 남긴다 — PO·타 고객·타 통화 제외", () => {
+    const rows = [
+      mk("SO", "cust-a", "USD", "keep-1"),
+      mk("PO", "cust-a", "USD", "po"),
+      mk("SO", "cust-b", "USD", "other-cust"),
+      mk("SO", "cust-a", "EUR", "other-cur"),
+      mk("SO", "cust-a", "USD", "keep-2"),
+    ];
+    expect(linesForCombo(rows, "cust-a", "USD").map((r) => r.tag)).toEqual([
+      "keep-1",
+      "keep-2",
+    ]);
+  });
+
+  it("★통화 공란(null·공백) SO 는 어떤 조합에도 안 들어간다 (서버도 거부)", () => {
+    const rows = [
+      mk("SO", "cust-a", null, "null-cur"),
+      mk("SO", "cust-a", "  ", "blank-cur"),
+    ];
+    expect(linesForCombo(rows, "cust-a", "USD")).toEqual([]);
+  });
+
+  it("통화는 공백을 다듬어 비교한다 (' USD ' == 'USD')", () => {
+    const rows = [mk("SO", "cust-a", " USD ", "trimmed")];
+    expect(linesForCombo(rows, "cust-a", "USD").map((r) => r.tag)).toEqual([
+      "trimmed",
+    ]);
+  });
+
+  it("고객 미상(null) 라인은 제외", () => {
+    const rows = [mk("SO", null, "USD", "no-cust")];
+    expect(linesForCombo(rows, "cust-a", "USD")).toEqual([]);
+  });
+});
+
+describe("discountEntriesOf — 주문별 문서 포함 금액 누적 (서버 v_so_amounts 미러)", () => {
+  const mk = (
+    soId: string | null,
+    soNumber: string | null,
+    qty: number,
+    unitPrice: number | null,
+    soDiscount: number,
+    soOrderTotal: number,
+  ): DiscountSourceLine => ({ soId, soNumber, qty, unitPrice, soDiscount, soOrderTotal });
+
+  it("★같은 주문의 라인 금액을 누적한다 — docAmount = Σ round2(qty×단가)", () => {
+    const entries = discountEntriesOf([
+      mk("so-1", "SO-1", 2, 10, 100, 1000), // 20
+      mk("so-1", "SO-1", 3, 5, 100, 1000), // 15
+    ]);
+    expect(entries).toEqual([
+      { soNumber: "SO-1", discount: 100, docAmount: 35, orderTotal: 1000 },
+    ]);
+  });
+
+  it("★다중 주문은 등장 순서대로 각자 엔트리 (서버 array_position 미러)", () => {
+    const entries = discountEntriesOf([
+      mk("so-2", "SO-2", 1, 100, 30, 300),
+      mk("so-1", "SO-1", 2, 10, 100, 1000),
+      mk("so-2", "SO-2", 1, 50, 30, 300),
+    ]);
+    expect(entries.map((e) => e.soNumber)).toEqual(["SO-2", "SO-1"]);
+    expect(entries[0].docAmount).toBe(150);
+    expect(entries[1].docAmount).toBe(20);
+  });
+
+  it("★부동소수 무오차 — 0.1×3 라인 누적도 round2 로 결정적", () => {
+    const entries = discountEntriesOf([
+      mk("so-1", "SO-1", 3, 0.1, 1, 10), // 0.3
+      mk("so-1", "SO-1", 3, 0.1, 1, 10), // 0.3
+    ]);
+    expect(entries[0].docAmount).toBe(0.6);
+  });
+
+  it("주문 미상(soId null)·단가 미상(unitPrice null) 라인은 미리보기에서 뺀다(서버가 발행 거부할 라인)", () => {
+    const entries = discountEntriesOf([
+      mk(null, null, 1, 10, 0, 0),
+      mk("so-1", "SO-1", 1, null, 100, 1000),
+      mk("so-1", "SO-1", 2, 10, 100, 1000),
+    ]);
+    expect(entries).toEqual([
+      { soNumber: "SO-1", discount: 100, docAmount: 20, orderTotal: 1000 },
+    ]);
+  });
+
+  it("allocateDiscounts 와 결합 — 전량 포함 = 주문 할인 그대로", () => {
+    const entries = discountEntriesOf([
+      mk("so-1", "SO-1", 2, 250, 40, 1000),
+      mk("so-1", "SO-1", 1, 500, 40, 1000),
+    ]);
+    expect(allocateDiscounts(entries).discount).toBe(40);
   });
 });

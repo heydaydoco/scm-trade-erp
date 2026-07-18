@@ -120,6 +120,63 @@ export function allocateDiscounts(entries: readonly DiscountAllocEntry[]): {
   return { discount: round2(discount), warnings };
 }
 
+/* ---------- ②-b (커밋 c) 발행 폼 결선 — 조합 스코프·할인 엔트리 구성 ---------- */
+
+/**
+ * (선적×고객×통화) 스코프 필터의 클라이언트 미러(D4) — 발행 폼이 이 조합에
+ * 속하는 라인만 보여주고 payload 에 싣는다. 서버(RPC)는 같은 스코프를 라인
+ * 단위로 재검증한다(클라 값 불신).
+ */
+export function linesForCombo<
+  T extends { orderType: "SO" | "PO"; customerId: string | null; currency: string | null },
+>(lines: readonly T[], customerId: string, currency: string): T[] {
+  return lines.filter(
+    (l) =>
+      l.orderType === "SO" &&
+      l.customerId === customerId &&
+      (l.currency?.trim() || null) === currency,
+  );
+}
+
+/** 할인 미리보기 재료 1줄 — listIssuableLines 파생 행의 부분집합. */
+export interface DiscountSourceLine {
+  soId: string | null;
+  soNumber: string | null;
+  qty: number;
+  unitPrice: number | null; // null = 단가 미상(서버가 발행 거부할 라인 — 미리보기 제외)
+  soDiscount: number;
+  soOrderTotal: number;
+}
+
+/**
+ * 포함 라인 → 주문별 DiscountAllocEntry (서버 v_so_ids/v_so_amounts 누적 미러).
+ * docAmount = Σ lineAmount(qty×단가) — 주문 등장 순서 유지(array_position 미러).
+ * soId·unitPrice 미상 라인은 뺀다(그 라인이 포함되면 서버가 발행 자체를 거부한다).
+ */
+export function discountEntriesOf(
+  lines: readonly DiscountSourceLine[],
+): DiscountAllocEntry[] {
+  const order: string[] = [];
+  const bySo = new Map<string, DiscountAllocEntry>();
+  for (const l of lines) {
+    if (l.soId === null || l.unitPrice === null) continue;
+    const amount = lineAmount(l.qty, l.unitPrice);
+    const entry = bySo.get(l.soId);
+    if (!entry) {
+      order.push(l.soId);
+      bySo.set(l.soId, {
+        soNumber: l.soNumber,
+        discount: l.soDiscount,
+        docAmount: amount,
+        orderTotal: l.soOrderTotal,
+      });
+    } else {
+      entry.docAmount = round2(entry.docAmount + amount);
+    }
+  }
+  return order.map((id) => bySo.get(id)!);
+}
+
 /* ---------- ③ 라인 금액·합계 — D2: amount = round2(qty × 단가) ---------- */
 
 /** 라인 금액 — 서버와 동일하게 round2. 미리보기 = 저장값(원칙 2). */

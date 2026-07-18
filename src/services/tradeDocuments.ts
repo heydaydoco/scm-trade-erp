@@ -26,8 +26,10 @@ import type {
 /* ---------- 순수 로직 재수출 (발행 폼이 브라우저에서 쓴다) ---------- */
 export {
   allocateDiscounts,
+  discountEntriesOf,
   issuableCombos,
   lineAmount,
+  linesForCombo,
   packingFillMode,
   subtotalOf,
   totalOf,
@@ -39,6 +41,7 @@ export type {
   AllOrNothing,
   ComboSourceLine,
   DiscountAllocEntry,
+  DiscountSourceLine,
   IssuableCombo,
   PackingLike,
 } from "./tradeDocLogic";

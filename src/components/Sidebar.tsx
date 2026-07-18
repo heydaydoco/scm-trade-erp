@@ -25,7 +25,10 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
   },
   {
     section: "무역",
-    items: [{ href: "/shipments", label: "선적" }],
+    items: [
+      { href: "/shipments", label: "선적" },
+      { href: "/documents", label: "무역서류" },
+    ],
   },
   {
     section: "재고",

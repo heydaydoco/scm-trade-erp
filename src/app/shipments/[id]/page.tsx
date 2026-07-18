@@ -7,12 +7,19 @@ import {
   getShipmentCargo,
   listShippableOrderLines,
 } from "@/services/shipmentCargo";
+import {
+  issuableCombos,
+  listIssuableLines,
+  listTradeDocumentsForShipment,
+} from "@/services/tradeDocuments";
 import type { PartnerLike, SellerLike } from "@/services/cargoLogic";
 import { SELLER } from "@/config/company";
 import Link from "next/link";
 import { ShipmentForm, type OrderOption } from "../ShipmentForm";
 import { CargoCard } from "./CargoCard";
 import { PageHeader } from "@/components/PageHeader";
+import { Badge } from "@/components/Badge";
+import { CURRENCY_SYMBOL } from "@/services/codes";
 
 export const dynamic = "force-dynamic";
 
@@ -22,15 +29,25 @@ export default async function EditShipmentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [shipment, partners, sos, pos, cargo, shippable] = await Promise.all([
-    getShipment(id),
-    listPartners(),
-    listSalesOrders(),
-    listPurchaseOrders(),
-    getShipmentCargo(id),
-    listShippableOrderLines(id),
-  ]);
+  const [shipment, partners, sos, pos, cargo, shippable, tradeDocs, issuable] =
+    await Promise.all([
+      getShipment(id),
+      listPartners(),
+      listSalesOrders(),
+      listPurchaseOrders(),
+      getShipmentCargo(id),
+      listShippableOrderLines(id),
+      listTradeDocumentsForShipment(id),
+      listIssuableLines(id),
+    ]);
   if (!shipment) notFound();
+
+  // 무역서류(P4.5) — (고객×통화) 발행 조합 + 활성 문서에 의한 화물 동결 안내.
+  const { combos, warnings: comboWarnings } = issuableCombos(issuable);
+  const activeDocs = tradeDocs.filter((d) => d.status === "issued");
+  const activeByCombo = new Map(
+    activeDocs.map((d) => [`${d.customerId}|${d.currency}`, d]),
+  );
 
   const partnerOptions = partners.map((p) => ({
     id: p.id,
@@ -114,6 +131,18 @@ export default async function EditShipmentPage({
         />
       </div>
 
+      {activeDocs.length > 0 && (
+        <div className="mt-8 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          🔒 무역서류{" "}
+          <span className="font-mono font-medium">
+            {activeDocs.map((d) => d.docNumber).join(", ")}
+          </span>{" "}
+          발행 중 — 이 선적의 <b>화물 내역·당사자 저장이 잠깁니다</b>(화인만 별도
+          저장 가능). 수정하려면 아래 무역서류를 <b>취소 → 수정 → 재발행</b>{" "}
+          하세요(재발행 시 새 번호).
+        </div>
+      )}
+
       <CargoCard
         shipmentId={shipment.id}
         direction={shipment.direction}
@@ -125,6 +154,136 @@ export default async function EditShipmentPage({
         partner={partnerLike}
         seller={sellerLike}
       />
+
+      {/* ---------- 무역서류 (P4.5 — CI/PL 발행·이력) ---------- */}
+      <section className="mt-10 space-y-4">
+        <div className="border-b border-zinc-100 pb-1">
+          <h2 className="text-base font-semibold text-slate-900">
+            무역서류 (CI / PL)
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            생성 단위 = (선적×고객×통화) 조합 — SO 연결 라인만 대상입니다(수입
+            서류는 공급자 발행). 한 번의 발행 = CI+PL 세트 = 번호 1개, 발행 후
+            불변(취소 후 재발행만).
+          </p>
+        </div>
+
+        {comboWarnings.length > 0 && (
+          <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {comboWarnings.map((w, i) => (
+              <p key={i}>{w}</p>
+            ))}
+          </div>
+        )}
+
+        {combos.length === 0 ? (
+          <p className="rounded-md border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500">
+            발행 가능한 (고객×통화) 조합이 없습니다 — 위 화물 카드에서 SO 라인을
+            담아 저장하면 조합이 나타납니다.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {combos.map((c) => {
+              const active = activeByCombo.get(`${c.customerId}|${c.currency}`);
+              return (
+                <li
+                  key={`${c.customerId}|${c.currency}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0">
+                    <span className="font-medium">
+                      {c.customerName ?? "(고객명 미상)"}
+                    </span>
+                    <span className="ml-2 text-xs text-slate-500">
+                      {c.currency} · 라인 {c.lineCount}건
+                      {c.soNumbers.length > 0 && (
+                        <span className="ml-1 font-mono">
+                          ({c.soNumbers.join(", ")})
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  {shipment.status === "cancelled" ? (
+                    <span className="text-xs text-slate-400">
+                      취소된 선적 — 발행 불가
+                    </span>
+                  ) : active ? (
+                    <span className="flex items-center gap-2 text-xs">
+                      <Badge variant="green">ISSUED</Badge>
+                      <Link
+                        href={`/documents/${active.id}`}
+                        className="font-mono text-blue-700 hover:underline"
+                      >
+                        {active.docNumber}
+                      </Link>
+                      <span className="text-slate-400">
+                        (재발행은 취소 후)
+                      </span>
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/documents/new?shipment=${shipment.id}&customer=${c.customerId}&currency=${encodeURIComponent(c.currency)}`}
+                      className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                    >
+                      발행 →
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {tradeDocs.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">번호</th>
+                  <th className="px-3 py-2">고객</th>
+                  <th className="px-3 py-2">통화</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                  <th className="px-3 py-2">상태</th>
+                  <th className="px-3 py-2">발행일</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tradeDocs.map((d) => (
+                  <tr
+                    key={d.id}
+                    className={d.status === "cancelled" ? "opacity-55" : ""}
+                  >
+                    <td className="px-3 py-2">
+                      <Link
+                        href={`/documents/${d.id}`}
+                        className="font-mono font-medium text-blue-700 hover:underline"
+                      >
+                        {d.docNumber}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2">{d.buyerName}</td>
+                    <td className="px-3 py-2">{d.currency}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {`${CURRENCY_SYMBOL[d.currency] ?? ""}${d.totalAmount.toLocaleString(
+                        undefined,
+                        { maximumFractionDigits: 2 },
+                      )} ${d.currency}`}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Badge
+                        variant={d.status === "cancelled" ? "red" : "green"}
+                      >
+                        {d.status.toUpperCase()}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2">{d.issueDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
