@@ -3,6 +3,7 @@ import {
   assembleChain,
   orderKey,
   resolveLineOrigin,
+  detailHref,
   DOC_TYPES,
   type AssembledChain,
   type ChainInput,
@@ -170,8 +171,8 @@ export async function buildDocChain(
   }
 
   // ── 1차 주문 트리(so-po 로만 확장) = primary ───────────────────────────────
-  let primarySo = new Set(seed.soIds);
-  let primaryPo = new Set(seed.poIds);
+  const primarySo = new Set(seed.soIds);
+  const primaryPo = new Set(seed.poIds);
   // SO → 파생 PO
   const childPos = await repo.purchaseOrdersBySalesOrderIds([...primarySo]);
   for (const po of childPos) primaryPo.add(po.id);
@@ -189,11 +190,18 @@ export async function buildDocChain(
   const salesOrders = await repo.salesOrdersByIds([...primarySo]);
   const purchaseOrders = await repo.purchaseOrdersByIds([...primaryPo]);
 
-  // ── 상류: 견적 → 문의 ──────────────────────────────────────────────────────
-  const quotationIds = uniq(salesOrders.map((s) => s.refQuotationId));
-  const quotations = await repo.quotationsByIds(quotationIds);
-  const inquiryIds = uniq(quotations.map((q) => q.inquiryId));
-  const inquiries = await repo.inquiriesByIds(inquiryIds);
+  // ── 상류: 견적 → 문의 (초점이 견적·문의면 하류 주문이 없어도 자신을 포함) ──
+  const quotationIdSet = new Set(uniq(salesOrders.map((s) => s.refQuotationId)));
+  if (focus.type === "quotation") quotationIdSet.add(focus.id);
+  let quotations = await repo.quotationsByIds([...quotationIdSet]);
+  if (focus.type === "inquiry") {
+    const inqQuots = await repo.quotationsByInquiryIds([focus.id]);
+    const seen = new Set(quotations.map((q) => q.id));
+    quotations = [...quotations, ...inqQuots.filter((q) => !seen.has(q.id))];
+  }
+  const inquiryIdSet = new Set(uniq(quotations.map((q) => q.inquiryId)));
+  if (focus.type === "inquiry") inquiryIdSet.add(focus.id);
+  const inquiries = await repo.inquiriesByIds([...inquiryIdSet]);
 
   // ── 하류: 출고·입고 → 원장 ─────────────────────────────────────────────────
   const deliveries = await repo.deliveriesBySalesOrderIds([...primarySo]);
@@ -203,9 +211,15 @@ export async function buildDocChain(
     goodsReceipts.map((g) => g.id),
   );
 
-  // ── 선적(M:N) → 무역서류 + 경계 주문 발견 ──────────────────────────────────
+  // ── 선적(M:N) → 무역서류 + 경계 주문 발견 (초점이 선적·무역서류면 자신 포함) ──
   const shipOrderLinks = await repo.shipmentOrdersByOrderIds([...primarySo], [...primaryPo]);
-  const shipmentIds = uniq(shipOrderLinks.map((l) => l.shipmentId));
+  const shipmentIdSet = new Set(uniq(shipOrderLinks.map((l) => l.shipmentId)));
+  if (focus.type === "shipment") shipmentIdSet.add(focus.id);
+  if (focus.type === "tradeDocument") {
+    const td = await repo.tradeDocumentsByIds([focus.id]);
+    if (td[0]) shipmentIdSet.add(td[0].shipmentId);
+  }
+  const shipmentIds = [...shipmentIdSet];
   const shipments = await repo.shipmentsByIds(shipmentIds);
   const allShipOrders = await repo.shipmentOrdersByShipmentIds(shipmentIds); // 경계 포함 전 링크
   const tradeDocs = await repo.tradeDocumentsByShipmentIds(shipmentIds);
@@ -381,7 +395,7 @@ async function buildFocusLines(
         open: null,
         derived: (byPointer.get(it.id) ?? []).map((d) => ({
           label: `${d.soNumber ?? "수주"} · 라인 ${d.lineNo}`,
-          href: `/sales-orders/${d.soId}`,
+          href: detailHref("salesOrder", d.soId), // 어휘 사전 경유(하드코딩 금지)
         })),
       }));
       return { kind: "quotation", showConsumption: false, originLabel: "파생 수주 라인", rows, note: null };
