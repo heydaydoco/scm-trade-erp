@@ -18,6 +18,7 @@ import {
 } from "../SalesOrderForm";
 import { DeliveryPanel } from "./DeliveryPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { flowHref } from "@/services/chainLogic";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,12 @@ export default async function EditSalesOrderPage({
             📄 출처 견적 보기 →
           </Link>
         ) : null}
+        <Link
+          href={flowHref("salesOrder", salesOrder.id)}
+          className="text-sm font-medium text-indigo-700 hover:underline"
+        >
+          🔗 문서 흐름 →
+        </Link>
       </div>
 
       {locked ? (

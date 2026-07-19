@@ -10,6 +10,7 @@ import {
   type PartnerOption,
 } from "../InquiryForm";
 import { PageHeader } from "@/components/PageHeader";
+import { flowHref } from "@/services/chainLogic";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +45,18 @@ export default async function EditInquiryPage({
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <PageHeader title="문의 수정" subtitle={inquiry.productName || "문의"} />
-      <div className="-mt-4 mb-4">
+      <div className="-mt-4 mb-4 flex flex-wrap items-center gap-4">
         <Link
           href={`/quotations/new?from=${inquiry.id}`}
           className="inline-block rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
         >
           → 이 문의로 견적 생성 (참조 생성)
+        </Link>
+        <Link
+          href={flowHref("inquiry", inquiry.id)}
+          className="text-sm font-medium text-indigo-700 hover:underline"
+        >
+          🔗 문서 흐름 →
         </Link>
       </div>
       <InquiryForm

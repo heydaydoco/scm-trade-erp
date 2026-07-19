@@ -18,6 +18,7 @@ import {
 } from "../PurchaseOrderForm";
 import { ReceiptPanel } from "./ReceiptPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { flowHref } from "@/services/chainLogic";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,12 @@ export default async function EditPurchaseOrderPage({
             📄 출처 수주 보기 →
           </Link>
         ) : null}
+        <Link
+          href={flowHref("purchaseOrder", purchaseOrder.id)}
+          className="text-sm font-medium text-indigo-700 hover:underline"
+        >
+          🔗 문서 흐름 →
+        </Link>
       </div>
       {locked ? (
         // 잠긴 발주는 폼을 렌더하지 않는다 — 고칠 수 없는 폼을 보여주는 게 더 나쁘다.

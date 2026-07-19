@@ -4,6 +4,7 @@ import { getReceipt } from "@/services/receipts";
 import { listStockMovements } from "@/services/stock";
 import { GR_STATUS, labelOf } from "@/services/codes";
 import { PageHeader } from "@/components/PageHeader";
+import { flowHref } from "@/services/chainLogic";
 import { CancelReceiptButton } from "./CancelReceiptButton";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,9 @@ export default async function ReceiptDetailPage({
         </Link>
         <Link href="/stock/movements" className="text-slate-600 hover:underline">
           📒 재고 원장 →
+        </Link>
+        <Link href={flowHref("goodsReceipt", receipt.id)} className="font-medium text-indigo-700 hover:underline">
+          🔗 문서 흐름 →
         </Link>
       </div>
 

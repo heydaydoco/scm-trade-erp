@@ -20,6 +20,7 @@ import { CargoCard } from "./CargoCard";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
 import { CURRENCY_SYMBOL } from "@/services/codes";
+import { flowHref } from "@/services/chainLogic";
 
 export const dynamic = "force-dynamic";
 
@@ -114,12 +115,18 @@ export default async function EditShipmentPage({
   return (
     <div className="mx-auto max-w-5xl px-8 py-8">
       <PageHeader title="선적 수정" subtitle={shipment.shipNumber} />
-      <div className="-mt-2 mb-4">
+      <div className="-mt-2 mb-4 flex flex-wrap items-center gap-4">
         <Link
           href={`/shipments/${shipment.id}/print`}
           className="text-sm text-blue-700 hover:underline"
         >
           🖨 S/I (Shipping Instruction) 보기 →
+        </Link>
+        <Link
+          href={flowHref("shipment", shipment.id)}
+          className="text-sm font-medium text-indigo-700 hover:underline"
+        >
+          🔗 문서 흐름 →
         </Link>
       </div>
       <div className="mt-4">

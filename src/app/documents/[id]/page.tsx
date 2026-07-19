@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Badge, type BadgeVariant } from "@/components/Badge";
 import { getTradeDocument } from "@/services/tradeDocuments";
 import { CURRENCY_SYMBOL } from "@/services/codes";
+import { flowHref } from "@/services/chainLogic";
 import { CancelDocumentButton } from "./CancelDocumentButton";
 
 export const dynamic = "force-dynamic";
@@ -178,6 +179,9 @@ export default async function TradeDocumentDetailPage({
           className="text-blue-700 hover:underline"
         >
           🖨 PL (Packing List) 보기 →
+        </Link>
+        <Link href={flowHref("tradeDocument", doc.id)} className="font-medium text-indigo-700 hover:underline">
+          🔗 문서 흐름 →
         </Link>
       </div>
 

@@ -14,6 +14,7 @@ import {
   labelOf,
 } from "@/services/codes";
 import { Field, inputClass } from "@/components/Field";
+import { detailHref, orderTypeToDocKey } from "@/services/chainLogic";
 
 /** 주문 연결 후보 (SO/PO 공통). */
 export interface OrderOption {
@@ -357,6 +358,7 @@ export function ShipmentForm({
               const opt = orderOptions.find(
                 (o) => o.type === l.orderType && o.id === l.orderId,
               );
+              const orderDocKey = orderTypeToDocKey(l.orderType);
               return (
                 <li
                   key={`${l.orderType}-${l.orderId}`}
@@ -372,9 +374,18 @@ export function ShipmentForm({
                     >
                       {l.orderType}
                     </span>
-                    <span className="font-mono text-zinc-800">
-                      {l.orderNumber}
-                    </span>
+                    {orderDocKey && l.orderId ? (
+                      <Link
+                        href={detailHref(orderDocKey, l.orderId)}
+                        className="font-mono text-blue-700 hover:underline"
+                      >
+                        {l.orderNumber}
+                      </Link>
+                    ) : (
+                      <span className="font-mono text-zinc-800">
+                        {l.orderNumber}
+                      </span>
+                    )}
                     {opt?.partnerName ? (
                       <span className="ml-2 text-zinc-400">
                         {opt.partnerName}

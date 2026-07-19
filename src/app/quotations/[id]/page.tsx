@@ -11,6 +11,7 @@ import {
   type PartnerOption,
 } from "../QuotationForm";
 import { PageHeader } from "@/components/PageHeader";
+import { flowHref } from "@/services/chainLogic";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,12 @@ export default async function EditQuotationPage({
           className="text-sm font-medium text-emerald-700 hover:underline"
         >
           📦 이 견적으로 수주 생성 →
+        </Link>
+        <Link
+          href={flowHref("quotation", quotation.id)}
+          className="text-sm font-medium text-indigo-700 hover:underline"
+        >
+          🔗 문서 흐름 →
         </Link>
       </div>
       <QuotationForm
