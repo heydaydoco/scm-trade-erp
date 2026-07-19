@@ -160,6 +160,10 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 **문서 흐름(Document Flow) 추적이 심장**: 어떤 전표에서든 사슬 전체를 조회.
 예) `SO-2026-0012 → 출고 2건 → 청구 1건, 잔량 5 → 백오더 1건`
 
+> **P4.6 실구현(v2.7):** 이 "문서 흐름 추적"이 **조회 전용 흐름뷰 `/flow/[slug]/[id]`** 로 실체화됐다(아래 §8 P4.6).
+> 단, 실사슬은 위 예의 선형이 아니라 **SO 를 허브로 하는 DAG** — CI(무역서류)는 **선적 앵커**라 "출고→청구" 선형 홉은
+> 실재하지 않고(출고·CI 는 SO 하위 **형제 분기**), backorders/sales_invoices 는 미구현(잔량은 파생 계산).
+
 ---
 
 ## 4. 모듈 전체 지도 (완전 열거 — "빠지는 파트 없이")
@@ -185,7 +189,7 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - B6. 재고 할당(Allocation) — 부족 시 배분 룰 `[P6]`
 - B7. **백오더(Backorder) 관리** — 미충족 수량 추적·재공급 연결 `[P6]`
 - B8. 출고/납품 (Delivery, SO 참조 생성, 부분출고, 재고 차감) ✅ *구현(P4.3 — 수주 참조생성·`DLV_OUT` 원장 전기·SO 잔량 뷰·부분출고·마이너스 경고 후 허용·상태 자동전환·취소=역분개·잔량 소비 가드·거래명세서 인쇄)* `[P4]`
-- B9. 청구 (Commercial Invoice, Delivery 참조 생성) `[P4]`
+- B9. 청구 (Commercial Invoice) ✅ *구현(P4.5 — 무역서류 CI/PL 실체화. ⚠️ **Delivery 참조가 아니라 선적(shipment) 앵커**: trade_documents.shipment_id + 라인 order_line_id→so_lines. 발행=CI+PL 세트=1행·불변·전량 스냅샷)* `[P4]` · AR 세금계산서(sales_invoices)는 미구현 `[P8]`
 - B10. 대금 회수/미수금(AR) 관리, 입금 대사 `[P8]`
 - B11. 수주잔고(Backlog) 관리 `[P6]`
 
@@ -300,9 +304,14 @@ so_lines(id, so_id, line_no, item_id, qty, uom, unit_price, amount,
    --   출고수량 = Σ(delivery_lines.qty where so_line_id=this), 잔량 = qty − 출고수량 (계산)
 deliveries(id, dlv_number, so_id, delivery_date, status)
 delivery_lines(id, delivery_id, line_no, so_line_id, item_id, qty, uom)
+   -- ※ P4.3 실구현 정정: 헤더는 so_id 가 아니라 ref_doc_type='sales_order' + ref_doc_id(소프트
+   --   포인터), 번호는 delivery_no. delivery_lines.so_line_id 도 소프트(FK 아님, 부모 재저장 시 stale).
 sales_invoices(id, inv_number, delivery_id, invoice_date, subtotal, tax, total, status)
 backorders(id, so_line_id, qty, reason, status, expected_supply_date)
    -- backorder는 "미충족이 확정되어 추적이 필요한 건"만 명시적으로 생성 (파생 잔량과 구분)
+   -- ※ P4.6 실구현 정정: sales_invoices·backorders 는 **미구현**(코드·DB 에 없음, P8/후속).
+   --   "청구"의 실구현은 무역서류 CI(trade_documents, **선적 앵커**)로 실체화됐고 — §3 도식의
+   --   출고→청구 선형 홉은 실재하지 않는다(CI 는 선적 하위, 출고는 SO 하위 **형제 분기**).
 ```
 - **잔량 = so_lines.qty − Σ(delivery_lines.qty)** ← ERP의 심장
 - 잔량 0 → SO 헤더 상태 자동 '출고완료'. 후속 전부 취소 시 되돌림.
@@ -315,9 +324,12 @@ po_lines(id, po_id, line_no, item_id, qty, uom, unit_price, amount)
    -- received_qty도 저장 안 함. 입고수량 = Σ(gr_lines.qty), 잔량 = qty − 입고수량 (계산)
 goods_receipts(id, gr_number, po_id, receipt_date, status)
 gr_lines(id, gr_id, line_no, po_line_id, item_id, qty, lot_no, serial_no)
+   -- ※ P4.2 실구현 정정: 헤더는 po_id 가 아니라 ref_doc_type='purchase_order' + ref_doc_id(소프트),
+   --   번호는 gr_no. gr_lines.po_line_id 도 소프트(FK 아님).
 purchase_invoices(id, inv_number, po_id, gr_id, invoice_date, subtotal, tax, total, status)
+   -- ※ P4.6 실구현 정정: purchase_invoices 는 **미구현**(송장검수 IR = C7[P8]). 3-way match 도 P8.
 ```
-- 3-way match: PO 단가 ↔ GR 수량 ↔ Invoice 금액 차이 검출.
+- 3-way match: PO 단가 ↔ GR 수량 ↔ Invoice 금액 차이 검출. (P8 — Invoice 노드 미구현)
 
 ### 재고 (원장)
 ```sql
@@ -336,12 +348,17 @@ shipments(id, ship_number, direction[export/import], partner_id,
 shipment_orders(id, shipment_id, order_type[SO/PO], order_id)   -- 연결 테이블 (M:N)
 shipment_lines(id, shipment_id, line_no, ref_order_line_id, item_id, hs_code,
                qty, unit_price, amount, origin)
+   -- ※ P4.4 실구현 정정: 참조 컬럼은 ref_order_line_id 가 아니라 **order_type('SO'/'PO') +
+   --   order_line_id**(폴리모픽 소프트). **금액 컬럼(unit_price·amount) 없음**(P4 = 수량 전용,
+   --   금액·환율 없음). hs_code 도 여기 없고 trade_document_lines 에 있다(발행 시 스냅샷).
 shipment_parties(shipment_id, role, name, address)
 milestones(id, shipment_id, type, planned_date, actual_date, tz, memo)  -- 기일 엔진 원천
 trade_documents(id, shipment_id, doc_type[CI/PL/BL/CO/LC], doc_number, doc_date, file, status)
    -- ※ P4.5 실구현 정정(뼈대 괴리 명시): 발행 1회 = **CI+PL 세트 = 1행**(doc_type 'CI' 고정·번호 1개
    --    CI-YYYYMM-NNN, PL 은 자체 번호 없이 Invoice No. 참조) + trade_document_lines 라인 전량 스냅샷.
    --    `file` 컬럼 없음 — 파일 보관이 아니라 스냅샷 실체화+인쇄 뷰다. BL/CO/LC 는 미구현(후속 판단).
+   --    날짜 컬럼은 **doc_date 가 아니라 issue_date**(KST). shipment_id 는 hard FK(ON DELETE RESTRICT),
+   --    customer_id 는 소프트. trade_document_lines 는 shipment_line_id + order_line_id(둘 다 소프트).
 lc_terms(shipment_id, lc_number, issuing_bank, amount, tolerance,
          expiry_date, latest_shipment_date, presentation_days, partial_allowed, transship_allowed)
 ```
@@ -361,6 +378,18 @@ doc_status_log(id, doc_type, doc_id, from_status, to_status, changed_by, changed
 audit_log(id, table_name, record_id, action, before_json, after_json, user, at)
 approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 ```
+
+### 참조 등급 (P4.6 성문화 — 흐름 추적 traversal 의 전제)
+스파인의 화살표는 **한 종류가 아니다.** 실구현 참조는 3(+1)등급이고, 흐름뷰·정리 SQL·향후 조회는 이 등급을 전제로 짜야 한다:
+- **마스터 참조**(→companies/products): **hard FK**. 마스터는 하드삭제 없음(active 토글)이라 안전.
+- **부모↔자식 라인**(so_lines.so_id·gr_lines.gr_id·trade_document_lines.document_id 등): **hard FK ON DELETE CASCADE**.
+- **문서-대-문서 참조**(sales_orders.ref_quotation_id·so_lines.ref_quotation_line_id·purchase_orders.ref_sales_order_id·
+  po_lines.ref_so_line_id·deliveries/goods_receipts.ref_doc_id 등): **soft pointer**(FK 아님) — 부모 라인이 저장 시
+  전량 DELETE+재INSERT 돼 FK 가 깨지므로 의도적 비-FK(부모 재저장 후 라인급 포인터는 **stale 가능**).
+- **폴리모픽 soft**(shipment_orders.order_id·shipment_lines.order_line_id·stock_movements.ref_doc_id/ref_line_id·
+  audit_log.record_id): 한 컬럼이 **판별자(order_type·ref_doc_type·table_name)로 2+ 대상**을 가리킨다.
+- ⇒ **전표-대-전표 hard FK 홉은 전 사슬에서 딱 2개**(quotations.inquiry_id · trade_documents.shipment_id). 나머지 전 홉은
+  **(type,id) 값조인 + 홉별 판별자 분기가 필수** — 순수 FK 조인으로는 사슬을 못 잇는다.
 
 ---
 
@@ -458,7 +487,21 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   - 🔑 **revalidate 재렌더의 성공 패널 증발** — 서버 액션 성공이 현재 페이지의 렌더 전제(폼 노출 조건)를 바꾸면, revalidatePath 가 현재 라우트를 서버 재렌더하면서 폼 컴포넌트가 다른 분기(가드 패널)로 교체돼 `useActionState` 성공 상태가 **증발**한다. 성공 피드백은 상태가 아니라 **redirect+도착 페이지 배너**(searchParams — 예: `?issued=1&w=경고JSON`)로 전달할 것(출고 생성 관례의 확장).
   - 🔑 **E2E 폴백 전례 (Seller 미설정)** — config 플레이스홀더 상태에서의 발행 검증은 아키텍트 사전 승인 하에 **표식 임시값('P45-TEST SELLER' 계열) 투입 → 발행물 전량 취소 → 정리 스크립트 제거** 로 수행했고, config 는 플레이스홀더로 원복·임시값은 커밋에 미포함(확인 완료). 동일 상황 재발 시 이 전례를 따른다.
   - **백로그**: ① 기존 인쇄 5벌의 공용 레이아웃 이관(P4.5 명시 제외분) ② 읽기 표시 폴백 'PCS' 제거(기존 유지) ③ **Seller 실값 미입력(오너 대기)** — `src/config/company.ts` 가 플레이스홀더인 동안 발행은 D7 거부가 정상, **실발행 전 필수 입력**.
-  - **다음: P4.6** — 문서 흐름 추적 화면.
+  - ✅ **P4.6 문서 흐름 추적(조회 전용) 완료·종결** (2026-07-19, 커밋 `1289855`(a chainLogic)→`9f7160f`(b docChain)→`e3721b5`(c /flow+링크)→`cd82391`(교정)→`0d32957`(1회성 SQL 기록)) — **여기까지가 P4(진짜 ERP) 1차 완성선 100% 도달.**
+    - **아키텍처**: 조회 전용 흐름뷰 `/flow/[slug]/[id]` — **쓰기 0 · DB 무변경(봉인 기준선 객체 31 불가촉) · 신규 외부 의존성 0**(그래프 라이브러리 없이 HTML/CSS). 8개 전표 상세(문의·견적·수주·발주·선적·입고·출고·무역서류)에 '문서 흐름' 진입 링크 + 선적 상세 연결주문 번호를 상세 href 로 링크화. 홈 내비 미추가.
+    - **`chainLogic` 어휘 사전 = 판별자 단일 진실**(상설 규율로 격상): 전표타입별 slug·**실테이블명(=audit_log.table_name)**·label·orderType·refDocType 실값·detailHref. **홉별 하드코딩 금지 — 전 조회·분기·href 는 사전을 경유한다.**
+    - **canonical 9엣지 고정**: 문의→견적 / 견적→수주 / 수주→발주 / 수주→출고 / 발주→입고 / 주문(SO|PO)→선적 / 선적→무역서류 / 출고·입고→원장 리프. **명시 금지 엣지: 출고→청구(무역서류) = 실재하지 않음**(CI 는 선적 하위, 출고는 SO 하위 **형제 분기**). sales_invoices·backorders 등 미구현 노드 렌더 금지.
+    - **SO-허브 DAG**: 진입 전표→상류 루트 상승→그 트리 하류 확장. **경계 노드**(공유 선적 경유로 만난 타 주문 = **미확장** · 번호+상태 배지+흐름뷰 링크만). **초점 전표만 라인 표** — 잔량 산식은 **기존 뷰(po/so_open_qty·shipment_line_totals) + docFlow 순수함수만**(신규 산식·파생수량 저장 금지).
+    - **stale 라인 포인터 규범**: 라인 소프트포인터 조인 실패 = "연결 끊김(원본 재저장됨)" + 스냅샷명 폴백, **DAG 는 헤더 사슬로 유지**. 라이브 6건(delivery_lines.so_line_id 3·gr_lines.po_line_id 3, **전부 취소 전표의 라인** — 소비 가드가 풀린 뒤 부모 재저장으로 생김)은 **불변 이력, 수선 금지**.
+    - **취소·REVERSAL 항상 표시**: 흐림+취소 배지 · 원장 리프 집계 카드("원장 N행 · 역분개 M행").
+    - **검증**: 순수 로직 테스트 35(어휘 완전성·폴리모픽 SO/PO 분기·null 판별자 통과·경계 비확장·유실 헤더 스텁·REVERSAL 집계·stale — **Vitest 253**) · 적대검증 6축(가짜엣지·경계누수·stale크래시·어휘우회·쓰기혼입·신규의존성 — 위반 0, minor 1 교정) · **표식 풀체인 E2E**(문의→…→CI 발행, CI 만 로컬 발행·나머지·검증은 배포본): 풀 DAG·경계 노드·CI+mono-SO 메타·취소·역분개 **전 시나리오 통과** → 표식 정리 SQL 오너 Run·**사후검증 13대상 잔존 0**(`scripts/p4.6_e2e_cleanup.sql`).
+    - 🔑 **판별자 어휘 오기** — `stock_movements.ref_doc_type` 컬럼 주석(p4.1:50)의 `'GR'|'DLV'` 는 오기, 실값은 **`'goods_receipt'`/`'delivery'`**. 홉마다 어휘가 달라(order_type·ref_doc_type·table_name) 단일 매핑 가정 금지 — 반드시 어휘 사전 경유.
+    - 🔑 **RSC 페이로드 정규식 검증 취약** — 서버 컴포넌트 HTML 은 숫자 분리 직렬화라 grep 이 마스킹한다. **렌더 검증은 가시 DOM·스크린샷 실물 대조**로.
+    - 🔑 **React 클라 버튼 자동화** — Playwright `click({force})` 가 React onClick 을 미발화(오버레이/핸들러 미부착)한다. **`dispatchEvent('click')`** 로 요소에 직접 이벤트를 쏴야 한다(라인 diff-upsert·발행 버튼 등).
+    - 🔑 **파괴적 1회성 SQL 사후검증** — 삭제문과 **독립 식별자**(전표번호 등 2요소)로 검증한다. 동일 UUID 리터럴 재사용 시 오기 마스킹("0행 삭제+검증 통과") — 정리 규율에 편입(P4.6 §8 교훈).
+    - **백로그**: ① **역조회 인덱스 후보 6종**(quotations.inquiry_id · quotation_items.quotation_id · so_lines.ref_quotation_line_id · po_lines.ref_so_line_id · trade_document_lines.order_line_id/shipment_line_id · stock_movements.ref_line_id) — 데이터 성장 시 신설(현 소량·조회 전용이라 **인덱스 신설 없이 종결**). ② **상세화면 직링크 공백**(문의→파생견적·견적→파생SO·무역서류→기저SO) — 흐름뷰가 커버, 낮은 우선순위. ③ 유지: D7 Seller 실값(실발행 전 필수·**재촉 금지**) · 기존 인쇄 5벌 공용 레이아웃 이관 · 'PCS' 읽기 폴백 제거.
+    - **정리·조사 1회성 SQL 레포 기록**: `scripts/p4.6_survey.sql`(사전조사)·`scripts/p4.6_e2e_cleanup.sql`(정리, 오너 Run 완료·잔존 0) — 커밋 `0d32957`(P4.5 전례).
+  - **P4 (진짜 ERP 1차 완성) 100% 도달 — 다음: P5+ (오너·아키텍트 별도 논의).**
 - **P5 — 통관 + 로트/시리얼 + 검수 + BOM**: 수출입 통관, 추적성, QC, BOM
 - **P6 — ATP/할당/백오더 + L/C + RMA + 알림엔진**: 공급 제약 처리, 결제, 반품
 - **P7 — RFQ/벤더평가 + FTA + 결재워크플로 + 실사**: 구매 고도화, 원산지, 승인
@@ -482,4 +525,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v2.6 · P0~P3 완료 + **P4.0~P4.5 완료·종결**(2026-07-18) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** (객체 31·위반 0). 다음: P4.6 문서 흐름 추적*
+*문서 버전: v2.7 · P0~P3 완료 + **P4.0~P4.6 완료·종결 = P4(진짜 ERP) 1차 완성선 100%**(2026-07-19) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** / **P4.6 문서 흐름 추적(조회 전용) — /flow SO-허브 DAG · chainLogic 어휘 사전 단일 진실 · canonical 9엣지(출고→청구 없음: CI 선적 앵커) · 경계 노드 · CI mono-SO 메타 · stale '연결 끊김' 폴백 · 취소/역분개 표시. 쓰기 0 · DB 무변경(기준선 31) · 신규 의존성 0 · Vitest 253 · 적대검증 6축 · 표식 풀체인 E2E 전 시나리오 통과 · 정리 잔존 0** (객체 31·위반 0). **P4 1차 완성선 100% 도달 — 다음: P5+ (오너·아키텍트 별도 논의).***
