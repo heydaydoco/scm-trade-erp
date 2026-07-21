@@ -21,6 +21,7 @@ interface Fixture {
   deliveries: { id: string; num: string; date: string; status: string; refDocId: string }[];
   goodsReceipts: { id: string; num: string; date: string; status: string; refDocId: string }[];
   tradeDocs: { id: string; num: string; date: string; status: string; shipmentId: string }[];
+  customsDecls?: { id: string; num: string; date: string | null; status: string; shipmentId: string }[];
   ledger: { refDocType: string | null; refDocId: string | null; movementType: string }[];
   tradeDocLines: { documentId: string; orderLineId: string | null; shipmentLineId: string | null; lineNo: number; productName: string | null; qty: number; uom: string | null }[];
   soLines: { id: string; soId: string; lineNo: number; productName: string | null }[];
@@ -81,6 +82,12 @@ function makeFake(fx: Fixture): { repo: DocChainRepo; calls: Record<string, numb
     },
     async tradeDocumentsByShipmentIds(ids) {
       return fx.tradeDocs.filter((r) => ids.includes(r.shipmentId)).map((r) => ({ id: r.id, docNumber: r.num, date: r.date, status: r.status, shipmentId: r.shipmentId }));
+    },
+    async customsDeclarationsByIds(ids) {
+      return (fx.customsDecls ?? []).filter((r) => ids.includes(r.id)).map((r) => ({ id: r.id, docNumber: r.num, date: r.date, status: r.status, shipmentId: r.shipmentId }));
+    },
+    async customsDeclarationsByShipmentIds(ids) {
+      return (fx.customsDecls ?? []).filter((r) => ids.includes(r.shipmentId)).map((r) => ({ id: r.id, docNumber: r.num, date: r.date, status: r.status, shipmentId: r.shipmentId }));
     },
     async shipmentOrdersByOrderIds(soIds, poIds) {
       const so = has(soIds), po = has(poIds);

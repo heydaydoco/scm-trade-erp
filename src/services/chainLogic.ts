@@ -31,6 +31,7 @@ import {
   GR_STATUS,
   DELIVERY_STATUS,
   TRADE_DOC_STATUS,
+  CUSTOMS_DECL_STATUS,
   type Code,
 } from "./codes";
 
@@ -46,7 +47,8 @@ export type DocTypeKey =
   | "shipment"
   | "goodsReceipt"
   | "delivery"
-  | "tradeDocument";
+  | "tradeDocument"
+  | "customsDeclaration";
 
 export type OrderType = "SO" | "PO";
 
@@ -175,6 +177,17 @@ export const DOC_TYPES: Record<DocTypeKey, DocTypeDef> = {
     column: "terminal",
     statusCodes: TRADE_DOC_STATUS,
   },
+  customsDeclaration: {
+    key: "customsDeclaration",
+    slug: "customs",
+    table: "customs_declarations",
+    label: "통관신고",
+    orderType: null,
+    ownRefDocType: null,
+    stockRefDocType: null,
+    column: "terminal",
+    statusCodes: CUSTOMS_DECL_STATUS,
+  },
 };
 
 const BY_SLUG: Record<string, DocTypeKey> = Object.fromEntries(
@@ -192,7 +205,7 @@ export function detailHref(type: DocTypeKey, id: string): string {
   return `/${DOC_TYPES[type].slug}/${id}`;
 }
 
-/** 흐름뷰 href — 8개 전표 상세의 진입 링크가 이걸 쓴다. */
+/** 흐름뷰 href — 9개 전표 상세의 진입 링크가 이걸 쓴다(P5.1: 통관신고 포함). */
 export function flowHref(type: DocTypeKey, id: string): string {
   return `/flow/${DOC_TYPES[type].slug}/${id}`;
 }
@@ -220,6 +233,7 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   issued: "green",
   arrived: "green",
   shipped: "green",
+  accepted: "green", // 통관 수리(P5.1)
   // 취소·부정
   cancelled: "red",
   rejected: "red",
@@ -234,6 +248,7 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   negotiating: "amber",
   confirmed: "blue",
   normal: "blue",
+  filed: "blue", // 통관 신고(P5.1)
   // 초안
   draft: "zinc",
   received: "zinc",
@@ -284,6 +299,10 @@ export interface RawTradeDocument extends RawDoc {
   /** trade_document_lines.order_line_id → so_lines.so_id distinct 집계(엣지 아님·메타). */
   soNumbers: string[];
 }
+export interface RawCustomsDeclaration extends RawDoc {
+  /** shipment_id — hard FK 앵커(값조인 아님). 한 선적에 수출+수입 0~N건 공존. */
+  shipmentId: string;
+}
 export interface RawShipmentOrder {
   shipmentId: string;
   orderType: string | null; // 'SO'|'PO'|null(판별자 부재 → 엣지 미기여)
@@ -315,6 +334,7 @@ export interface ChainInput {
   deliveries: RawConsumptionDoc[];
   goodsReceipts: RawConsumptionDoc[];
   tradeDocuments: RawTradeDocument[];
+  customsDeclarations: RawCustomsDeclaration[];
   ledger: RawLedgerRow[];
 }
 
@@ -327,7 +347,8 @@ export type EdgeKind =
   | "order-shipment" // ⑥
   | "shipment-tradedoc" // ⑦
   | "delivery-ledger" // ⑧
-  | "receipt-ledger"; // ⑨
+  | "receipt-ledger" // ⑨
+  | "shipment-customs"; // ⑩ (P5.1 — 선적→통관신고, shipment_id hard FK)
 
 export interface ChainNode {
   key: string; // 유일 키
@@ -412,7 +433,7 @@ export function ledgerLeaves(
 }
 
 /**
- * DAG 조립 — 순수. 엣지는 canonical 9종만(그 외 금지). 미해석 헤더 포인터는
+ * DAG 조립 — 순수. 엣지는 canonical 10종만(그 외 금지). 미해석 헤더 포인터는
  * 스텁 노드, 경계 주문은 미확장 표시, 원장은 집계 리프.
  */
 export function assembleChain(input: ChainInput): AssembledChain {
@@ -463,6 +484,7 @@ export function assembleChain(input: ChainInput): AssembledChain {
     n.meta = { soNumbers: d.soNumbers };
     addNode(n);
   }
+  for (const d of input.customsDeclarations) addNode(baseNode("customsDeclaration", d));
 
   // ── 스텁 헬퍼: 헤더 포인터 대상이 없으면 "유실된 상류(삭제됨)" ────────────
   const ensureParent = (type: DocTypeKey, id: string): string => {
@@ -525,6 +547,10 @@ export function assembleChain(input: ChainInput): AssembledChain {
   // ⑦ shipment → trade_document
   for (const td of input.tradeDocuments) {
     addEdge(ensureParent("shipment", td.shipmentId), nodeKey("tradeDocument", td.id), "shipment-tradedoc");
+  }
+  // ⑩ shipment → customs_declaration (P5.1 — 엣지 ⑦ 동형, shipment_id hard FK)
+  for (const cd of input.customsDeclarations) {
+    addEdge(ensureParent("shipment", cd.shipmentId), nodeKey("customsDeclaration", cd.id), "shipment-customs");
   }
   // ⑧⑨ delivery/goods_receipt → 원장 리프 (집계)
   const leaves = ledgerLeaves(input.ledger);

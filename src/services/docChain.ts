@@ -17,6 +17,7 @@ import {
   type RawSalesOrder,
   type RawShipmentOrder,
   type RawTradeDocument,
+  type RawCustomsDeclaration,
 } from "./chainLogic";
 
 /**
@@ -51,6 +52,8 @@ export interface DocChainRepo {
   goodsReceiptsByPurchaseOrderIds(ids: string[]): Promise<RawConsumptionDoc[]>;
   tradeDocumentsByIds(ids: string[]): Promise<RawTradeDocHead[]>;
   tradeDocumentsByShipmentIds(ids: string[]): Promise<RawTradeDocHead[]>;
+  customsDeclarationsByIds(ids: string[]): Promise<RawCustomsDeclHead[]>;
+  customsDeclarationsByShipmentIds(ids: string[]): Promise<RawCustomsDeclHead[]>;
 
   // 연결·라인
   shipmentOrdersByOrderIds(soIds: string[], poIds: string[]): Promise<RawShipmentOrder[]>;
@@ -75,6 +78,9 @@ export interface DocChainRepo {
 }
 
 export interface RawTradeDocHead extends RawDoc {
+  shipmentId: string;
+}
+export interface RawCustomsDeclHead extends RawDoc {
   shipmentId: string;
 }
 export interface OpenLine {
@@ -219,10 +225,15 @@ export async function buildDocChain(
     const td = await repo.tradeDocumentsByIds([focus.id]);
     if (td[0]) shipmentIdSet.add(td[0].shipmentId);
   }
+  if (focus.type === "customsDeclaration") {
+    const cd = await repo.customsDeclarationsByIds([focus.id]);
+    if (cd[0]) shipmentIdSet.add(cd[0].shipmentId);
+  }
   const shipmentIds = [...shipmentIdSet];
   const shipments = await repo.shipmentsByIds(shipmentIds);
   const allShipOrders = await repo.shipmentOrdersByShipmentIds(shipmentIds); // 경계 포함 전 링크
   const tradeDocs = await repo.tradeDocumentsByShipmentIds(shipmentIds);
+  const customsDecls = await repo.customsDeclarationsByShipmentIds(shipmentIds);
 
   // 경계 주문 헤더(미확장 — 번호·상태만, 포인터는 null 로 잘라 상류 확장 차단)
   const boundarySoIds = uniq(
@@ -244,6 +255,13 @@ export async function buildDocChain(
     shipmentId: td.shipmentId,
     soNumbers: soNumbersByDoc.get(td.id) ?? [],
   }));
+  const customsDeclarations: RawCustomsDeclaration[] = customsDecls.map((cd) => ({
+    id: cd.id,
+    docNumber: cd.docNumber,
+    date: cd.date,
+    status: cd.status,
+    shipmentId: cd.shipmentId,
+  }));
 
   const primaryOrders = [
     ...[...primarySo].map((id) => orderKey("salesOrder", id)),
@@ -262,6 +280,7 @@ export async function buildDocChain(
     deliveries,
     goodsReceipts,
     tradeDocuments,
+    customsDeclarations,
     ledger,
   };
   const chain = assembleChain(input);
@@ -330,6 +349,17 @@ async function seedOrders(
       const lines = await repo.tradeDocLinesByDocIds([focus.id]);
       const soLines = await repo.soLinesByIds(uniq(lines.map((l) => l.orderLineId)));
       return { found: true, soIds: uniq(soLines.map((l) => l.soId)), poIds: [] };
+    }
+    case "customsDeclaration": {
+      // 통관신고는 선적 앵커(라인 없음). 선적의 연결 주문으로 1차 주문을 시드한다(선적 focus 동형).
+      const cd = await repo.customsDeclarationsByIds([focus.id]);
+      if (cd.length === 0) return { found: false, soIds: [], poIds: [] };
+      const links = await repo.shipmentOrdersByShipmentIds([cd[0].shipmentId]);
+      return {
+        found: true,
+        soIds: uniq(links.filter((l) => l.orderType === "SO").map((l) => l.orderId)),
+        poIds: uniq(links.filter((l) => l.orderType === "PO").map((l) => l.orderId)),
+      };
     }
   }
 }
@@ -531,6 +561,16 @@ async function buildFocusLines(
       }));
       return { kind: "tradeDocument", showConsumption: false, originLabel: "출처 수주 라인", rows, note: null };
     }
+
+    case "customsDeclaration":
+      // 헤더 온리(라인 없음) — 초점 라인 표는 비운다.
+      return {
+        kind: "customsDeclaration",
+        showConsumption: false,
+        originLabel: "",
+        rows: [],
+        note: "통관신고는 라인이 없습니다(헤더 온리).",
+      };
   }
 }
 
@@ -621,6 +661,12 @@ function makeRealRepo(): DocChainRepo {
     },
     async tradeDocumentsByShipmentIds(ids) {
       return mapTradeHead(await sel<Record<string, unknown>>("trade_documents", "id, doc_number, issue_date, status, shipment_id", "shipment_id", ids));
+    },
+    async customsDeclarationsByIds(ids) {
+      return mapCustomsHead(await sel<Record<string, unknown>>("customs_declarations", "id, decl_doc_no, filing_date, status, shipment_id", "id", ids));
+    },
+    async customsDeclarationsByShipmentIds(ids) {
+      return mapCustomsHead(await sel<Record<string, unknown>>("customs_declarations", "id, decl_doc_no, filing_date, status, shipment_id", "shipment_id", ids));
     },
     async shipmentOrdersByOrderIds(soIds, poIds) {
       const out: RawShipmentOrder[] = [];
@@ -785,6 +831,9 @@ function mapConsume(rows: Record<string, unknown>[], numberField: string, dateFi
 }
 function mapTradeHead(rows: Record<string, unknown>[]): RawTradeDocHead[] {
   return rows.map((r) => ({ id: r.id as string, docNumber: (r.doc_number as string | null) ?? null, date: (r.issue_date as string | null) ?? null, status: (r.status as string | null) ?? null, shipmentId: r.shipment_id as string }));
+}
+function mapCustomsHead(rows: Record<string, unknown>[]): RawCustomsDeclHead[] {
+  return rows.map((r) => ({ id: r.id as string, docNumber: (r.decl_doc_no as string | null) ?? null, date: (r.filing_date as string | null) ?? null, status: (r.status as string | null) ?? null, shipmentId: r.shipment_id as string }));
 }
 function mapLedger(data: unknown): RawLedgerRow[] {
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ refDocType: (r.ref_doc_type as string | null) ?? null, refDocId: (r.ref_doc_id as string | null) ?? null, movementType: r.movement_type as string }));

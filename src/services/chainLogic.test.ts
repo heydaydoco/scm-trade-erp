@@ -44,12 +44,22 @@ const ALL_KEYS: DocTypeKey[] = [
   "goodsReceipt",
   "delivery",
   "tradeDocument",
+  "customsDeclaration",
 ];
 
-describe("어휘 사전 — 8개 전표타입, slug·테이블·판별자 실값이 조사와 일치", () => {
-  it("8개 키가 전부 정의돼 있다", () => {
+describe("어휘 사전 — 9개 전표타입, slug·테이블·판별자 실값이 조사와 일치", () => {
+  it("9개 키가 전부 정의돼 있다", () => {
     for (const k of ALL_KEYS) expect(DOC_TYPES[k]?.key).toBe(k);
     expect(Object.keys(DOC_TYPES).sort()).toEqual([...ALL_KEYS].sort());
+  });
+
+  it("통관신고(P5.1) 사전 항목 — slug=customs, table=customs_declarations, column=terminal", () => {
+    expect(DOC_TYPES.customsDeclaration.slug).toBe("customs");
+    expect(DOC_TYPES.customsDeclaration.table).toBe("customs_declarations");
+    expect(DOC_TYPES.customsDeclaration.column).toBe("terminal");
+    expect(DOC_TYPES.customsDeclaration.orderType).toBeNull();
+    expect(detailHref("customsDeclaration", "CD1")).toBe("/customs/CD1");
+    expect(flowHref("customsDeclaration", "CD1")).toBe("/flow/customs/CD1");
   });
 
   it("slug 은 유일하다(라우팅 충돌 없음)", () => {
@@ -238,6 +248,7 @@ function fullChainInput(overrides?: Partial<ChainInput>): ChainInput {
     deliveries: [delivery],
     goodsReceipts: [receipt],
     tradeDocuments: [tradeDoc],
+    customsDeclarations: [],
     ledger,
     ...overrides,
   };
@@ -312,6 +323,42 @@ describe("assembleChain — 취소 지배 사슬(라이브 실태)도 노드가 
     expect(isCancelledStatus(d.status)).toBe(true);
     const leaf = chain.nodes.find((n) => n.key === "ledger:delivery:D1")!;
     expect(leaf.meta).toEqual({ ledgerCount: 2, reversalCount: 1 });
+  });
+});
+
+/* ---------- ⑩ 선적 → 통관신고 (P5.1) ---------- */
+
+describe("assembleChain — 선적→통관신고 엣지(⑩, P5.1)", () => {
+  it("한 선적에 수출+수입 신고가 공존하고 각각 shipment-customs 엣지가 그려진다", () => {
+    const input = fullChainInput({
+      customsDeclarations: [
+        { ...doc("CD1", "ECD-202607-001", "accepted"), shipmentId: "SH1" },
+        { ...doc("CD2", "ICD-202607-001", "filed"), shipmentId: "SH1" },
+      ],
+    });
+    const chain = assembleChain(input);
+    expect(
+      hasEdge(chain.edges, "shipment:SH1", "customsDeclaration:CD1", "shipment-customs"),
+    ).toBe(true);
+    expect(
+      hasEdge(chain.edges, "shipment:SH1", "customsDeclaration:CD2", "shipment-customs"),
+    ).toBe(true);
+    const term = chain.columns.find((c) => c.group === "terminal")!;
+    expect(term.nodes.some((n) => n.type === "customsDeclaration" && n.id === "CD1")).toBe(true);
+    const cd1 = chain.nodes.find((n) => n.key === "customsDeclaration:CD1")!;
+    expect(cd1.label).toBe("통관신고");
+    expect(cd1.status).toBe("accepted");
+  });
+
+  it("선적이 사슬에 없으면 통관신고는 '유실된 상류' 선적 스텁에 매달린다(무크래시)", () => {
+    const input = fullChainInput({
+      customsDeclarations: [{ ...doc("CD9", "ECD-202607-009", "draft"), shipmentId: "SH_GONE" }],
+    });
+    const chain = assembleChain(input);
+    expect(
+      hasEdge(chain.edges, "shipment:SH_GONE", "customsDeclaration:CD9", "shipment-customs"),
+    ).toBe(true);
+    expect(chain.nodes.find((n) => n.key === "shipment:SH_GONE")?.stub).toBe(true);
   });
 });
 
