@@ -229,6 +229,23 @@ export const TRADE_DOC_STATUS: Code[] = [
 ];
 
 /**
+ * 통관신고 상태 (P5.1 — 실제 customs_declarations.status 값, 소문자).
+ * draft→filed→accepted 순방향만(역행 금지), 취소는 별도 RPC. accepted 후 수정 없음(취소만).
+ */
+export const CUSTOMS_DECL_STATUS: Code[] = [
+  { code: "draft", label: "작성중" },
+  { code: "filed", label: "신고" },
+  { code: "accepted", label: "수리" },
+  { code: "cancelled", label: "취소" },
+];
+
+/** 통관신고 유형 (P5.1 — customs_declarations.decl_type: 수출 E6 / 수입 E9). */
+export const DECL_TYPE: Code[] = [
+  { code: "export", label: "수출신고" },
+  { code: "import", label: "수입신고" },
+];
+
+/**
  * 재고 이동 유형 (P4.1, SPEC D2 — 원칙 4 코드테이블: 부호·의미를 코드가 갖는다).
  *
  * ⚠️ `sign` 이 이 시스템의 부호 단일 진실이다. 화면은 항상 양수만 입력받고,

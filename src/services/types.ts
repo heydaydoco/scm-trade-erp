@@ -503,17 +503,17 @@ export interface Shipment {
 /**
  * 도메인 타입 — 임박 기일(DeadlineItem) (SPEC I7·E3, P3.3 기일 역산 알림).
  *
- * 여러 소스(선적 마일스톤·수주/발주 납기·견적 유효기일)의 날짜를 하나로 모아 D-day로 정렬한다.
+ * 여러 소스(선적 마일스톤·수주/발주 납기·견적 유효기일·통관 적재의무기한)의 날짜를 하나로 모아 D-day로 정렬한다.
  *  - dDay = 기일(YYYY-MM-DD) − 오늘(**Asia/Seoul 달력 날짜**). 음수 = 지남(overdue).
  *  - 읽기 전용 파생 뷰(스키마 없음) — 기존 날짜 컬럼을 계산할 뿐, 별도 테이블 없음.
  */
 export interface DeadlineItem {
-  source: string; // milestone | so | po | quotation
-  sourceLabel: string; // '선적 마일스톤' | '수주 납기' | '발주 납기' | '견적 유효기일'
-  kind: string; // 세부 유형 (마일스톤 라벨 ETD/ETA…, '납기 요청일', '유효기일')
+  source: string; // milestone | so | po | quotation | customs
+  sourceLabel: string; // '선적 마일스톤' | '수주 납기' | '발주 납기' | '견적 유효기일' | '수출신고'
+  kind: string; // 세부 유형 (마일스톤 라벨 ETD/ETA…, '납기 요청일', '유효기일', '적재의무기한')
   date: string; // YYYY-MM-DD (기일)
   dDay: number; // 기일 − 오늘(KST). 음수=지남, 0=오늘, 양수=D-n
-  docType: string; // shipment | sales_order | purchase_order | quotation (링크용)
+  docType: string; // shipment | sales_order | purchase_order | quotation | customs_declaration (링크용)
   docId: string;
   docNumber: string; // SHP-… / SO-… / PO-… / QT-…
   partnerName: string | null;
@@ -885,4 +885,57 @@ export interface IssuableLine {
   grossWeightPrefill: number | null; // R1: shipment_line.gross_weight_kg
   packageCount: number | null; // R-정정 포장 경고 판정용
   packageType: string | null;
+}
+
+/* ============================================================================
+ *  통관신고 (P5.1 — customs_declarations, 수출 E6 / 수입 E9)
+ *  헤더 온리(라인 없음)·인쇄물 없음. 쓰기는 RPC 2종(save/cancel)뿐(출생 봉인).
+ * ========================================================================== */
+
+/** 통관신고 헤더 도메인 — status·declType 소문자. 선적 요약은 조회 시 임베드. */
+export interface CustomsDeclaration {
+  id: string;
+  declDocNo: string; // 내부 채번 ECD/ICD-YYYYMM-NNN
+  declType: string; // DECL_TYPE: export | import
+  shipmentId: string; // hard FK 앵커
+  status: string; // CUSTOMS_DECL_STATUS: draft | filed | accepted | cancelled
+  customsDeclNo: string | null; // 세관 발급 신고번호(내부 채번과 별개 — 입력값만)
+  filingDate: string | null; // YYYY-MM-DD (KST)
+  acceptanceDate: string | null; // YYYY-MM-DD (KST)
+  brokerName: string | null; // 관세사(자유 텍스트)
+  taxableValue: number | null; // 수입 전용 세액(관세사 통지값 — 계산·단정 없음)
+  dutyAmount: number | null;
+  vatAmount: number | null;
+  taxCurrency: string | null;
+  loadingDeadlineExtended: string | null; // 수출 전용 — 적재의무기한 연장승인일
+  memo: string | null;
+  cancelledAt: string | null; // ISO
+  cancelReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // 선적 요약 스냅샷 아님 — 조회 시 임베드(표시용, 없으면 null)
+  shipmentNo: string | null;
+  shipmentStatus: string | null;
+  partnerName: string | null;
+}
+
+/**
+ * 통관신고 저장 입력 — save_customs_declaration RPC 파라미터의 도메인 형태.
+ * id=null 은 신규(1회 발번). qty·세액은 발명·계산 없음 — 입력값 그대로 전달, 검증은 RPC.
+ */
+export interface CustomsDeclarationInput {
+  id: string | null;
+  shipmentId: string;
+  declType: string; // export | import
+  status: string; // draft | filed | accepted (cancelled 는 별도 취소 RPC)
+  customsDeclNo: string | null;
+  filingDate: string | null;
+  acceptanceDate: string | null;
+  brokerName: string | null;
+  taxableValue: number | null;
+  dutyAmount: number | null;
+  vatAmount: number | null;
+  taxCurrency: string | null;
+  loadingDeadlineExtended: string | null;
+  memo: string | null;
 }

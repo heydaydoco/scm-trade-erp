@@ -37,3 +37,13 @@ export function daysBetween(fromYmd: string, toYmd: string): number {
   const b = Date.parse(`${toYmd}T00:00:00Z`);
   return Math.round((b - a) / 86400000);
 }
+
+/**
+ * 'YYYY-MM-DD' 에 달력 일수 days 를 더한 'YYYY-MM-DD'. UTC 자정 파싱·산술로 TZ 드리프트 제거
+ * (daysBetween 과 같은 원리 — 로컬/DST 개입 없음, 월·연·윤년 경계는 Date 가 처리).
+ * 파생 기일(예: 적재의무기한 = 수리일 + 30)의 순수 계산용 — 저장하지 않고 표시 시점에 계산한다.
+ */
+export function addDaysYmd(ymd: string, days: number): string {
+  const t = Date.parse(`${ymd}T00:00:00Z`) + days * 86400000;
+  return new Date(t).toISOString().slice(0, 10);
+}

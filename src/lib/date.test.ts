@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { todayKst, periodKst, periodOfYmd, daysBetween } from "./date";
+import { todayKst, periodKst, periodOfYmd, daysBetween, addDaysYmd } from "./date";
 
 /**
  * P4.0-a — 발번·날짜의 KST 기준 증명.
@@ -78,5 +78,41 @@ describe("daysBetween — D-day 계산", () => {
 
   it("서머타임 없는 KST라도 UTC 자정 파싱으로 드리프트 없음", () => {
     expect(daysBetween("2026-03-01", "2026-04-01")).toBe(31);
+  });
+});
+
+describe("addDaysYmd — 파생 기일(수리일+30 등) 계산", () => {
+  it("적재의무기한 대표: 수리일 + 30 (월 넘김)", () => {
+    // 7/16 + 30 = 8/15 (7월 31일)
+    expect(addDaysYmd("2026-07-16", 30)).toBe("2026-08-15");
+  });
+
+  it("월 경계: 7/31 + 1 = 8/1", () => {
+    expect(addDaysYmd("2026-07-31", 1)).toBe("2026-08-01");
+  });
+
+  it("연 경계: 12/31 + 1 = 다음해 1/1", () => {
+    expect(addDaysYmd("2026-12-31", 1)).toBe("2027-01-01");
+  });
+
+  it("윤년: 2028-02-28 + 1 = 2028-02-29 (2028은 윤년)", () => {
+    expect(addDaysYmd("2028-02-28", 1)).toBe("2028-02-29");
+  });
+
+  it("평년: 2027-02-28 + 1 = 2027-03-01 (2027은 평년)", () => {
+    expect(addDaysYmd("2027-02-28", 1)).toBe("2027-03-01");
+  });
+
+  it("윤년 2월을 가로지르는 +30: 2028-02-15 + 30 = 2028-03-16", () => {
+    // 2/15 → 2/29까지 14일 + 3월 16일 = 30일
+    expect(addDaysYmd("2028-02-15", 30)).toBe("2028-03-16");
+  });
+
+  it("0일은 그대로", () => {
+    expect(addDaysYmd("2026-07-16", 0)).toBe("2026-07-16");
+  });
+
+  it("음수 일수도 지원(역산)", () => {
+    expect(addDaysYmd("2026-08-01", -1)).toBe("2026-07-31");
   });
 });
