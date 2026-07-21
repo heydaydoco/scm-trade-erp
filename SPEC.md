@@ -222,10 +222,10 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - E3. 선적 마일스톤 (서류마감/Cargo Closing/ETD/ETA/VGM) + **기일 역산 알림** ✅ *마일스톤(P3.2) + 기일 역산 알림(P3.3 — 앱내 임박기일 목록 D-7/3/1·KST 기준·홈 배지)* `[P3]`
 - E4. 분할선적 차수 관리 (1 SO → N 선적) — 주문↔선적 연결(M:N)은 *P3.2 구현*, 수량 배분 추적은 P4 `[P4]`
 - E5. 컨테이너 적입(CBM/적입계획), 쉬핑마크, VGM `[P5]`
-- E6. 수출 통관 (수출신고, 신고수리, 적재의무기한=수리일+30일) `[P5]`
+- E6. 수출 통관 (수출신고, 신고수리, 적재의무기한=수리일+30일) ✅ *구현(P5.1 — customs_declarations 수출신고: 신고/수리 상태·세관 신고번호(입력값만)·적재의무기한=coalesce(연장승인일, 수리일+30) **파생 계산·저장 없음**·기일엔진 5번째 소스)* `[P5]`
 - E7. 무역서류 생성기 (CI / PL / B/L draft / C/O) — 한 데이터원에서 생성, 교차검증 `[P4]`
 - E8. FTA 원산지 관리 (PSR 충족, C/O 발급, 인증수출자) `[P7]`
-- E9. 수입 통관 (수입신고, 관세/부가세, 수입요건) `[P5]`
+- E9. 수입 통관 (수입신고, 관세/부가세, 수입요건) ✅ *구현(P5.1 — customs_declarations 수입신고: 세액(과세가격·관세·부가세·통화)은 관세사 통지값 **기록만**, 시스템 계산·단정 금지(원칙 6). 라인 전개·세액 배부는 F7 `[P8]`)* `[P5]`
 - E10. HS코드 분류 보조 (참고 메모 수준 — 자동 단정 금지) `[P7]`
 - E11. 위험물(DG)/검역 대상 관리 `[P9]`
 - E12. 수출통제 / 전략물자 스크리닝 (제재 리스트 대조, 캐치올, ECCN, 우려거래자) `[P7]`
@@ -359,6 +359,17 @@ trade_documents(id, shipment_id, doc_type[CI/PL/BL/CO/LC], doc_number, doc_date,
    --    `file` 컬럼 없음 — 파일 보관이 아니라 스냅샷 실체화+인쇄 뷰다. BL/CO/LC 는 미구현(후속 판단).
    --    날짜 컬럼은 **doc_date 가 아니라 issue_date**(KST). shipment_id 는 hard FK(ON DELETE RESTRICT),
    --    customer_id 는 소프트. trade_document_lines 는 shipment_line_id + order_line_id(둘 다 소프트).
+customs_declarations(id, decl_doc_no, decl_type[export/import], shipment_id, status[draft/filed/accepted/cancelled],
+         customs_decl_no, filing_date, acceptance_date, broker_name,
+         taxable_value, duty_amount, vat_amount, tax_currency,   -- 수입 전용(관세사 통지값 기록)
+         loading_deadline_extended,                              -- 수출 전용(적재기한 연장승인일)
+         memo, cancelled_at, cancel_reason)
+   -- ※ P5.1 실구현: 헤더 온리(라인 없음)·인쇄물 없음(신고필증은 세관 발행물). decl_doc_no 는
+   --    내부 채번 ECD/ICD-YYYYMM-NNN(세관 발급 customs_decl_no 와 별개). shipment_id 는
+   --    **hard FK(ON DELETE RESTRICT — 발행 앵커 원칙, trade_documents.shipment_id 동형)**.
+   --    적재의무기한은 컬럼 없음 — coalesce(loading_deadline_extended, acceptance_date+30) 계산 온리.
+   --    쓰기=SECURITY DEFINER RPC 2종(save_customs_declaration·cancel_customs_declaration)뿐. 한 선적에
+   --    수출+수입 신고 0~N 공존(검증은 shipment.direction 방향 일치 규칙 담당).
 lc_terms(shipment_id, lc_number, issuing_bank, amount, tolerance,
          expiry_date, latest_shipment_date, presentation_days, partial_allowed, transship_allowed)
 ```
@@ -388,8 +399,9 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
   전량 DELETE+재INSERT 돼 FK 가 깨지므로 의도적 비-FK(부모 재저장 후 라인급 포인터는 **stale 가능**).
 - **폴리모픽 soft**(shipment_orders.order_id·shipment_lines.order_line_id·stock_movements.ref_doc_id/ref_line_id·
   audit_log.record_id): 한 컬럼이 **판별자(order_type·ref_doc_type·table_name)로 2+ 대상**을 가리킨다.
-- ⇒ **전표-대-전표 hard FK 홉은 전 사슬에서 딱 2개**(quotations.inquiry_id · trade_documents.shipment_id). 나머지 전 홉은
+- ⇒ **전표-대-전표 hard FK 홉은 전 사슬에서 딱 3개**(quotations.inquiry_id · trade_documents.shipment_id · **customs_declarations.shipment_id** — P5.1). 나머지 전 홉은
   **(type,id) 값조인 + 홉별 판별자 분기가 필수** — 순수 FK 조인으로는 사슬을 못 잇는다.
+- **발행 앵커 = hard FK ON DELETE RESTRICT 원칙**(P4.5 성문화·P5.1 재확인): 선적을 앵커로 "발행"되는 종단 전표(무역서류·통관신고)는 `shipment_id` 를 **hard FK RESTRICT** 로 건다 — 앵커 선적이 살아있는 동안 실수 삭제를 DB가 막고, 정리 SQL 은 자식(발행 전표)을 먼저 지워 RESTRICT 를 해제해야 한다. (선적↔통관신고가 hard 홉 3번째이자 이 원칙의 두 번째 적용.)
 
 ---
 
@@ -502,6 +514,15 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
     - **백로그**: ① **역조회 인덱스 후보 6종**(quotations.inquiry_id · quotation_items.quotation_id · so_lines.ref_quotation_line_id · po_lines.ref_so_line_id · trade_document_lines.order_line_id/shipment_line_id · stock_movements.ref_line_id) — 데이터 성장 시 신설(현 소량·조회 전용이라 **인덱스 신설 없이 종결**). ② **상세화면 직링크 공백**(문의→파생견적·견적→파생SO·무역서류→기저SO) — 흐름뷰가 커버, 낮은 우선순위. ③ 유지: D7 Seller 실값(실발행 전 필수·**재촉 금지**) · 기존 인쇄 5벌 공용 레이아웃 이관 · 'PCS' 읽기 폴백 제거.
     - **정리·조사 1회성 SQL 레포 기록**: `scripts/p4.6_survey.sql`(사전조사)·`scripts/p4.6_e2e_cleanup.sql`(정리, 오너 Run 완료·잔존 0) — 커밋 `0d32957`(P4.5 전례).
   - **P4 (진짜 ERP 1차 완성) 100% 도달 — 다음: P5+ (오너·아키텍트 별도 논의).**
+  - ✅ **P5.1 통관신고(수출 E6·수입 E9) 완료·종결** (2026-07-21, 커밋 `57e1d46`(a 마이그레이션)→`a825a5f`(b 코드계층)→`328b5b3`(c 화면)→`96f704d`(d 기일엔진)→`18938d1`(e 문서흐름)→`3f9f9e6`(1회성 SQL 기록)) — **P5 진입 첫 딜리버리.**
+    - **범위**: E6 수출통관 + E9 수입통관을 **단일 전표 `customs_declarations`**(헤더 온리·인쇄물 없음 — 신고필증은 세관 발행물)로. **E5 적입(CBM·쉬핑마크·VGM)은 P5.2 분리·이번 범위 밖.** 라인 전개·세액 배부는 F7 `[P8]`.
+    - **테이블/RPC**: `shipment_id` **hard FK ON DELETE RESTRICT**(발행 앵커) · status(draft/filed/accepted/cancelled 소문자) · 수입 세액 4필드(관세사 통지값 **기록만**·계산 단정 금지·원칙 6) · 수출 `loading_deadline_extended` · **적재의무기한 파생저장 없음**(coalesce(연장, 수리일+30) 계산 온리). 쓰기=SECURITY DEFINER RPC 2종(`save_customs_declaration`·`cancel_customs_declaration`)뿐 — 방향 일치·상태 전이 매트릭스(draft→filed→accepted 순방향·역행 금지·accepted 수정 전면거부·취소만)·필수/전용 필드·금액-통화 불가분·날짜 정합 전부 서버 검증. 채번 `export_declaration`(ECD)/`import_declaration`(ICD). **출생봉인 revoke→grant select · 선적취소 가드 트리거 신규(기존 잠긴 트리거 무수정) · 감사 트리거. 봉인 기준선 객체 31→32.**
+    - **기일엔진 5번째 소스 '적재의무기한'**: 수출·수리·수리일 있는 신고에서 coalesce(연장, 수리일+30), 소속 선적 shipped/arrived/cancelled면 JS 제외. `gatherDeadlines` 4지점(인터페이스·쿼리·에러루프·매핑) 확장(중앙 레지스트리 없음). 수입 세금 납부기한 소스는 백로그(결제조건 모델 필요).
+    - **문서흐름 편입**: `chainLogic` 9번째 전표(customsDeclaration·slug customs·terminal·statusCodes) + `docChain` **10번째 canonical 엣지 = 선적→통관신고**(shipment_id hard FK) + `/flow/customs/[id]` 자동 성립 + 취소 흐림. 판별자 하드코딩 금지·어휘 사전 경유. 한 선적에 수출+수입 신고 0~N 공존.
+    - **검증**: Vitest **307**(전이 매트릭스·필수·전용·불가분·정합·기일소스·⑩엣지) · tsc/eslint/next build 그린 · 변경분 5차원 적대검증(확정 5건 전부 minor/nit — 죽은 재수출·취소 배너 redirect화·stale 주석 — 수정) · **배포본 스모크 전항목 PASS**(canonical `scm-trade-erp.vercel.app` — 배포별 해시 URL 은 Vercel SSO 보호라 canonical 로). **스팟체크 게이트 = 오너 직권 지시(스팟체크 클코 대행, "니가 직접해줘")** — 표준 오너 스팟체크·아키텍트 승인 아님(P4.4 귀속규칙). RPC 경로 P51 표식 데이터로 전 라이프사이클(생성→수리→취소·기일 노출/소멸) 검증 후 **1회성 SQL 정리·사후검증 8대상 잔존 0**(`scripts/p5.1_spotcheck_cleanup.sql`).
+    - 🔑 **오너 셸 = PowerShell 전제** — 오너에게 셸 명령을 안내할 때 cmd 문법(`rmdir /s /q`) 금지, PowerShell 문법(`Remove-Item -Recurse -Force`)으로 안내한다(dev `.next` 삭제 안내에서 cmd 문법 사고).
+    - 🔑 **Turbopack dev [id] 전면 404** — `next dev`(Turbopack)가 전 동적 `[id]` 상세 라우트를 404 내는 사례 관측(신규뿐 아니라 기존 `/partners/[id]` 등도 — production `next start`·배포본은 정상). **코드 문제로 오인 금지**, 해소는 dev 재시작 + `.next` 삭제.
+    - **백로그**: ① **Playwright 재설치**(이번 미설치 — fetch 스모크로 대행, 재설치 시 렌더 실물 대조 복원) ② 발번 `lpad` 999건/월 절단·충돌(전 단계부터 잔존) ③ **broker 관세사 마스터 편입**(현재 자유텍스트 — companies 거래처 유형에 관세사/포워더 없음) ④ **수입 세금 납부기한 기일소스**(결제조건 모델 필요) ⑤ E5 적입 = P5.2.
 - **P5 — 통관 + 로트/시리얼 + 검수 + BOM**: 수출입 통관, 추적성, QC, BOM
 - **P6 — ATP/할당/백오더 + L/C + RMA + 알림엔진**: 공급 제약 처리, 결제, 반품
 - **P7 — RFQ/벤더평가 + FTA + 결재워크플로 + 실사**: 구매 고도화, 원산지, 승인
@@ -521,8 +542,9 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 3. **체크포인트 커밋**: 동작하는 지점마다 git commit. 망가지면 되돌리기.
 4. **검수**: AI 결과물을 그대로 믿지 말고, 정합성 테스트 시나리오로 검증.
 5. **이 SPEC 갱신**: 기능 추가/변경 시 이 문서의 해당 섹션도 같이 수정 (단일 진실 유지).
-6. **하지 말 것**: 전표 삭제 기능, 만능 수정 권한, 관세율 자동 단정, 수기 재입력 화면, 잔량을 수정가능 필드로.
+6. **하지 말 것**: 전표 삭제 기능, 만능 수정 권한, 관세율 자동 단정, **세관 신고번호 발명**(입력값만), 수기 재입력 화면, 잔량을 수정가능 필드로.
+7. **마감 정본 순서**(아키텍트 판정 2026-07-21): 변경분 적대검증 → 타입체크·전체 테스트 → **오너 스팟체크 게이트**(오너 직권 지시로 클코 대행 가능) → **커밋·푸시** → 배포본 검증 → 정리 SQL(파괴적=참조 가드+독립 사후검증) → SPEC 버전업·종결. **main 직행 배포라 푸시=즉시 라이브 → 사람 게이트(스팟체크)는 반드시 푸시 앞.** 게이트 귀속은 사실대로 표기 — 직권 지시 대행이면 "오너 직권 지시(스팟체크 클코 대행)", **'표준 스팟체크 통과'·'아키텍트 승인' 오기 금지**(P4.4 귀속규칙).
 
 ---
 
-*문서 버전: v2.7 · P0~P3 완료 + **P4.0~P4.6 완료·종결 = P4(진짜 ERP) 1차 완성선 100%**(2026-07-19) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** / **P4.6 문서 흐름 추적(조회 전용) — /flow SO-허브 DAG · chainLogic 어휘 사전 단일 진실 · canonical 9엣지(출고→청구 없음: CI 선적 앵커) · 경계 노드 · CI mono-SO 메타 · stale '연결 끊김' 폴백 · 취소/역분개 표시. 쓰기 0 · DB 무변경(기준선 31) · 신규 의존성 0 · Vitest 253 · 적대검증 6축 · 표식 풀체인 E2E 전 시나리오 통과 · 정리 잔존 0** (객체 31·위반 0). **P4 1차 완성선 100% 도달 — 다음: P5+ (오너·아키텍트 별도 논의).***
+*문서 버전: v2.8 · P0~P3 완료 + **P4.0~P4.6 완료·종결 = P4(진짜 ERP) 1차 완성선 100%**(2026-07-19) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** / **P4.6 문서 흐름 추적(조회 전용) — /flow SO-허브 DAG · chainLogic 어휘 사전 단일 진실 · canonical 9엣지(출고→청구 없음: CI 선적 앵커) · 경계 노드 · CI mono-SO 메타 · stale '연결 끊김' 폴백 · 취소/역분개 표시. 쓰기 0 · DB 무변경(기준선 31) · 신규 의존성 0 · Vitest 253 · 적대검증 6축 · 표식 풀체인 E2E 전 시나리오 통과 · 정리 잔존 0** (객체 31·위반 0). **P4 1차 완성선 100% 도달.** / **P5.1 통관신고(수출 E6·수입 E9) 완료·종결**(2026-07-21, 커밋 57e1d46~18938d1+3f9f9e6) — `customs_declarations` 단일 전표(헤더 온리·인쇄물 없음)·`shipment_id` **hard FK RESTRICT**(전표-대-전표 hard 홉 3번째·발행 앵커 원칙)·수입 세액 4필드 **기록만**(계산·단정 금지)·적재의무기한 파생저장 없음(수리일+30 계산 온리 = 기일엔진 5번째 소스)·SECURITY DEFINER RPC 2종 봉인(상태 전이·방향·전용필드·불가분 서버검증)·`chainLogic` 9번째 전표 + `docChain` 10번째 엣지(선적→통관신고)·`/flow/customs` 자동 성립·**봉인 기준선 객체 31→32**·Vitest 307·변경분 적대검증 5건(minor/nit) 수정·**배포본 스모크 전항목 PASS**·스팟체크 게이트 = **오너 직권 지시(스팟체크 클코 대행)**·1회성 정리 SQL 사후검증 8대상 잔존 0. E5 적입(CBM·마크·VGM)=P5.2. **다음: P5+ (오너·아키텍트 별도 논의).***
