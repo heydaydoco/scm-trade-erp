@@ -12,6 +12,7 @@ const DOC_HREF: Record<string, string> = {
   sales_order: "/sales-orders",
   purchase_order: "/purchase-orders",
   quotation: "/quotations",
+  customs_declaration: "/customs",
 };
 
 /** D-day 강조 — 지남 > 오늘/D-1 > D-3 > D-7 > 그 외 (원칙: 지남이 최상단·최강조). */
@@ -139,7 +140,8 @@ export default async function DeadlinesPage({
       )}
 
       <p className="mt-6 text-xs text-zinc-400">
-        소스: 선적 마일스톤(실적 없음·취소 선적 제외) · 수주/발주 납기(완료·취소 제외) · 견적 유효기일(작성중·발송).
+        소스: 선적 마일스톤(실적 없음·취소 선적 제외) · 수주/발주 납기(완료·취소 제외) · 견적 유효기일(작성중·발송) ·
+        적재의무기한(수출 수리 신고, 수리일+30 또는 연장일 — 나간/취소 선적 제외).
         &lsquo;오늘&rsquo;은 한국(Asia/Seoul) 달력 날짜 기준 · L/C·대금 만기는 후속 단계 · 데이터 출처: Supabase
       </p>
     </div>
