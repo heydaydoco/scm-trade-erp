@@ -28,6 +28,7 @@ const NAV: { section: string; items: { href: string; label: string }[] }[] = [
     items: [
       { href: "/shipments", label: "선적" },
       { href: "/documents", label: "무역서류" },
+      { href: "/customs", label: "통관신고" },
     ],
   },
   {

@@ -12,6 +12,7 @@ import {
   listIssuableLines,
   listTradeDocumentsForShipment,
 } from "@/services/tradeDocuments";
+import { listCustomsDeclarationsForShipment } from "@/services/customsDeclarations";
 import type { PartnerLike, SellerLike } from "@/services/cargoLogic";
 import { SELLER } from "@/config/company";
 import Link from "next/link";
@@ -19,7 +20,7 @@ import { ShipmentForm, type OrderOption } from "../ShipmentForm";
 import { CargoCard } from "./CargoCard";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
-import { CURRENCY_SYMBOL } from "@/services/codes";
+import { CURRENCY_SYMBOL, CUSTOMS_DECL_STATUS, DECL_TYPE, labelOf } from "@/services/codes";
 import { flowHref } from "@/services/chainLogic";
 
 export const dynamic = "force-dynamic";
@@ -30,17 +31,27 @@ export default async function EditShipmentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [shipment, partners, sos, pos, cargo, shippable, tradeDocs, issuable] =
-    await Promise.all([
-      getShipment(id),
-      listPartners(),
-      listSalesOrders(),
-      listPurchaseOrders(),
-      getShipmentCargo(id),
-      listShippableOrderLines(id),
-      listTradeDocumentsForShipment(id),
-      listIssuableLines(id),
-    ]);
+  const [
+    shipment,
+    partners,
+    sos,
+    pos,
+    cargo,
+    shippable,
+    tradeDocs,
+    issuable,
+    customsDecls,
+  ] = await Promise.all([
+    getShipment(id),
+    listPartners(),
+    listSalesOrders(),
+    listPurchaseOrders(),
+    getShipmentCargo(id),
+    listShippableOrderLines(id),
+    listTradeDocumentsForShipment(id),
+    listIssuableLines(id),
+    listCustomsDeclarationsForShipment(id),
+  ]);
   if (!shipment) notFound();
 
   // 무역서류(P4.5) — (고객×통화) 발행 조합 + 활성 문서에 의한 화물 동결 안내.
@@ -284,6 +295,83 @@ export default async function EditShipmentPage({
                       </Badge>
                     </td>
                     <td className="px-3 py-2">{d.issueDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* ---------- 통관신고 (P5.1 — 수출 E6 / 수입 E9) ---------- */}
+      <section className="mt-10 space-y-4">
+        <div className="flex items-end justify-between gap-2 border-b border-zinc-100 pb-1">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">통관신고 (E6 / E9)</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              이 선적을 앵커로 수출·수입 통관신고를 기록합니다(헤더 온리, 인쇄물 없음).
+              세액은 관세사 통지값을 기록만 합니다 — 시스템 계산·단정 없음.
+            </p>
+          </div>
+          {shipment.status !== "cancelled" && (
+            <Link
+              href={`/customs/new?shipment=${shipment.id}`}
+              className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+            >
+              신고 작성 →
+            </Link>
+          )}
+        </div>
+
+        {customsDecls.length === 0 ? (
+          <p className="rounded-md border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500">
+            {shipment.status === "cancelled"
+              ? "취소된 선적 — 통관신고를 작성할 수 없습니다."
+              : "작성된 통관신고가 없습니다 — [신고 작성]으로 시작하세요."}
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">번호</th>
+                  <th className="px-3 py-2">유형</th>
+                  <th className="px-3 py-2">세관번호</th>
+                  <th className="px-3 py-2">상태</th>
+                  <th className="px-3 py-2">신고일</th>
+                  <th className="px-3 py-2">수리일</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {customsDecls.map((d) => (
+                  <tr key={d.id} className={d.status === "cancelled" ? "opacity-55" : ""}>
+                    <td className="px-3 py-2">
+                      <Link
+                        href={`/customs/${d.id}`}
+                        className="font-mono font-medium text-blue-700 hover:underline"
+                      >
+                        {d.declDocNo}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2">{labelOf(DECL_TYPE, d.declType)}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{d.customsDeclNo ?? "-"}</td>
+                    <td className="px-3 py-2">
+                      <Badge
+                        variant={
+                          d.status === "cancelled"
+                            ? "red"
+                            : d.status === "accepted"
+                              ? "green"
+                              : d.status === "filed"
+                                ? "blue"
+                                : "zinc"
+                        }
+                      >
+                        {labelOf(CUSTOMS_DECL_STATUS, d.status)}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2">{d.filingDate ?? "-"}</td>
+                    <td className="px-3 py-2">{d.acceptanceDate ?? "-"}</td>
                   </tr>
                 ))}
               </tbody>
