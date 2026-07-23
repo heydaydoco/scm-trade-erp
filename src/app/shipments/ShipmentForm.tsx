@@ -338,13 +338,9 @@ export function ShipmentForm({
             defaultValue={v?.blNo ?? shipment?.blNo ?? ""}
           />
         </Field>
-        <Field label="컨테이너 번호">
-          <input
-            name="containerNo"
-            className={inputClass}
-            defaultValue={v?.containerNo ?? shipment?.containerNo ?? ""}
-          />
-        </Field>
+        {/* 컨테이너 번호 필드 없음(P5.2 사장) — 컨테이너는 복수·타입·씰·VGM·라인
+            배분을 갖는 실측 기록이라 헤더 스칼라로 담기지 않는다. 선적 상세의
+            [적입] 카드에서 입력한다(별도 저장 경로). */}
       </div>
 
       {/* ---------- 연결 주문 (M:N) ---------- */}

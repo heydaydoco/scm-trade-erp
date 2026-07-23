@@ -36,7 +36,6 @@ interface ShipmentRow {
   pod: string | null;
   booking_no: string | null;
   bl_no: string | null;
-  container_no: string | null;
   incoterms: string | null;
   status: string | null;
   notes: string | null;
@@ -46,8 +45,9 @@ interface ShipmentRow {
 }
 
 // 주문연결·마일스톤을 FK 임베드로 한 쿼리에 가져온다(so_lines처럼 별도 조회 불필요).
+// ⚠️ container_no 는 읽지 않는다(P5.2 사장) — 아래 headerPayload 주석 참조.
 const SHIPMENT_COLUMNS =
-  "id, ship_number, direction, partner_id, forwarder, carrier, transport, vessel_voyage, pol, pod, booking_no, bl_no, container_no, incoterms, status, notes, companies(company_name, country), shipment_orders(order_type, order_id, order_number), milestones(type, planned_date, actual_date, memo, sort_order)";
+  "id, ship_number, direction, partner_id, forwarder, carrier, transport, vessel_voyage, pol, pod, booking_no, bl_no, incoterms, status, notes, companies(company_name, country), shipment_orders(order_type, order_id, order_number), milestones(type, planned_date, actual_date, memo, sort_order)";
 
 /* ---------- 순수 매핑 (I/O 없음 → 단위 테스트 가능) ---------- */
 
@@ -82,7 +82,6 @@ function assembleShipment(row: ShipmentRow): Shipment {
     pod: row.pod,
     bookingNo: row.booking_no,
     blNo: row.bl_no,
-    containerNo: row.container_no,
     incoterms: row.incoterms,
     status: row.status ?? "draft",
     notes: row.notes,
@@ -99,6 +98,16 @@ function currentPeriod(): string {
   return periodKst();
 }
 
+/**
+ * save_shipment(잠긴 RPC — 무수정) 의 p_header.
+ *
+ * ⚠️ **container_no 를 싣지 않는다**(P5.2 사장). 컨테이너 정본은 shipment_containers
+ *    이고 저장 경로는 save_shipment_containers 다. RPC 는 잠겨 있어 시그니처를 고칠 수
+ *    없으므로 `p_header->>'container_no'` 는 NULL 로 해석된다 → **이 폼을 다시 저장하는
+ *    순간 남아 있던 레거시 헤더 컨테이너 번호는 NULL 이 된다**(의도된 사장 동작).
+ *    컬럼 자체는 존치하고, 이미 발행된 trade_documents 의 container_no 스냅샷은
+ *    불변이다(과거 서류의 사실은 소급 변경되지 않는다).
+ */
 function headerPayload(input: ShipmentInput): Record<string, unknown> {
   return {
     direction: input.direction,
@@ -111,7 +120,6 @@ function headerPayload(input: ShipmentInput): Record<string, unknown> {
     pod: input.pod,
     booking_no: input.bookingNo,
     bl_no: input.blNo,
-    container_no: input.containerNo,
     incoterms: input.incoterms,
     status: input.status,
     notes: input.notes,
@@ -152,7 +160,6 @@ export function buildShipmentDraftFromSalesOrder(so: SalesOrder): ShipmentInput 
     pod: null,
     bookingNo: null,
     blNo: null,
-    containerNo: null,
     incoterms: so.incoterms,
     status: "draft",
     notes: null,
@@ -176,7 +183,6 @@ export function buildShipmentDraftFromPurchaseOrder(
     pod: null,
     bookingNo: null,
     blNo: null,
-    containerNo: null,
     incoterms: po.incoterms,
     status: "draft",
     notes: null,

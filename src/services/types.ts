@@ -492,7 +492,9 @@ export interface Shipment {
   pod: string | null; // 도착항
   bookingNo: string | null; // 포워더 부킹번호
   blNo: string | null; // B/L 번호
-  containerNo: string | null;
+  // ⚠️ containerNo 없음(P5.2) — 헤더 컨테이너 스칼라는 **사장**됐다. 컨테이너는
+  //    shipment_containers(복수·타입·씰·VGM·라인 배분)가 정본이다. shipments.container_no
+  //    컬럼과 trade_documents 스냅샷 체인은 그대로 존치한다(과거 서류의 사실 보존).
   incoterms: string | null;
   status: string; // draft/booked/shipped/arrived/cancelled
   notes: string | null;
@@ -538,7 +540,7 @@ export interface ShipmentInput {
   pod: string | null;
   bookingNo: string | null;
   blNo: string | null;
-  containerNo: string | null;
+  // ⚠️ containerNo 없음(P5.2 사장) — 위 Shipment 주석 참조. 적입은 별도 RPC 로 저장한다.
   incoterms: string | null;
   status: string;
   notes: string | null;

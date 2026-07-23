@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getShipment } from "@/services/shipments";
 import { getShipmentCargo } from "@/services/shipmentCargo";
+import { getShipmentContainers } from "@/services/shipmentContainers";
 import {
   qtyTotalsByUom,
   packageTotalsByType,
   sumFinite,
 } from "@/services/cargoLogic";
+import { containerMetrics } from "@/services/containerLogic";
 import { labelOf, TRANSPORT, SHIPMENT_PARTY_ROLES } from "@/services/codes";
 import { PrintButton } from "@/components/PrintButton";
 import type { ShipmentParty } from "@/services/types";
@@ -22,6 +24,10 @@ export const dynamic = "force-dynamic";
  * ⚠️ 금액·환율은 절대 찍지 않는다 — 선적은 물류 전표(P4 수량 전용).
  * ⚠️ 총계 규칙(P4.3e 교훈): 수량은 단위별, 포장수는 포장 유형별로 쪼갠다.
  *    중량(kg)·CBM(m³)은 고정 단위라 단일 합계.
+ * ⚠️ 컨테이너(P5.2): 헤더 스칼라 `Container:` 셀은 **사장**됐다 — 아래 CONTAINERS
+ *    섹션(shipment_containers)이 정본이다. 컨테이너가 0건이면 섹션 자체를 생략한다
+ *    (빈 표를 인쇄하면 "적입 정보 없음"이 아니라 "적입 안 함"으로 읽힌다).
+ *    섹션의 포장수·G.W.·CBM 은 배분에서 **파생 계산**한 표시값이다(저장 없음).
  */
 export default async function ShipmentPrintPage({
   params,
@@ -29,9 +35,10 @@ export default async function ShipmentPrintPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [shipment, cargo] = await Promise.all([
+  const [shipment, cargo, stuffing] = await Promise.all([
     getShipment(id),
     getShipmentCargo(id),
+    getShipmentContainers(id),
   ]);
   if (!shipment) notFound();
 
@@ -51,6 +58,37 @@ export default async function ShipmentPrintPage({
   const pkgTotalLabel = pkgTotals
     .map((t) => `${t.count} ${t.packageType}`)
     .join(" · ");
+
+  // 적입(P5.2) — 배분은 컨테이너 id 를 축으로 계산한다(저장 후이므로 ref = id).
+  const containers = stuffing.containers;
+  const metricByRef = new Map(
+    containerMetrics(
+      containers.map((c) => ({ ref: c.id, containerType: c.containerType })),
+      cargo.lines,
+      stuffing.allocations.map((a) => ({
+        containerRef: a.containerId,
+        shipmentLineId: a.shipmentLineId,
+        allocatedPackageCount: a.allocatedPackageCount,
+      })),
+    ).map((m) => [m.ref, m]),
+  );
+  const ctnPackages = sumFinite(
+    containers.map((c) => metricByRef.get(c.id)?.packages ?? 0),
+  );
+  const ctnGw = sumFinite(
+    containers.map((c) => metricByRef.get(c.id)?.grossWeightKg ?? 0),
+  );
+  const ctnCbm = sumFinite(
+    containers.map((c) => metricByRef.get(c.id)?.cbm ?? 0),
+  );
+  const ctnVgm = sumFinite(containers.map((c) => c.vgmKg));
+  const hasVgm = containers.some((c) => c.vgmKg != null);
+  // 하나라도 원값이 없으면 합계가 '전부'가 아니다 — 별표로 표시하고 각주로 설명한다.
+  const ctnIncomplete = containers.some(
+    (c) =>
+      metricByRef.get(c.id)?.gwIncomplete ||
+      metricByRef.get(c.id)?.cbmIncomplete,
+  );
 
   const partyLabel: Record<string, string> = {
     shipper: "Shipper (송하인)",
@@ -138,7 +176,7 @@ export default async function ShipmentPrintPage({
           <p><strong>POD:</strong> {shipment.pod ?? "-"}</p>
           <p><strong>Incoterms:</strong> {shipment.incoterms ?? "-"}</p>
           <p><strong>B/L No:</strong> {shipment.blNo ?? "-"}</p>
-          <p><strong>Container:</strong> {shipment.containerNo ?? "-"}</p>
+          {/* Container 셀 없음(P5.2 사장) — 아래 CONTAINERS 섹션이 정본. */}
           <p className="col-span-3">
             <strong>Ref. Orders:</strong>{" "}
             {shipment.orders.length > 0
@@ -230,6 +268,82 @@ export default async function ShipmentPrintPage({
           * Quantity totals are shown per unit; package totals per package type.
           Prices are not part of this document.
         </p>
+
+        {/* ---------- CONTAINERS (적입 — P5.2). 0건이면 섹션 자체를 찍지 않는다. ---------- */}
+        {containers.length > 0 && (
+          <div className="mb-8">
+            <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Containers (적입)
+            </h3>
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="border-b-2 border-blue-800 text-left text-[11px] uppercase tracking-wider text-zinc-500">
+                  <th className="py-2 pr-2" style={{ width: "6%" }}>No.</th>
+                  <th className="py-2 pr-2" style={{ width: "24%" }}>Container No.</th>
+                  <th className="py-2 pr-2" style={{ width: "12%" }}>Type</th>
+                  <th className="py-2 pr-2" style={{ width: "18%" }}>Seal No.</th>
+                  <th className="py-2 pr-2 text-right" style={{ width: "10%" }}>Packages</th>
+                  <th className="py-2 pr-2 text-right" style={{ width: "10%" }}>G.W. (kg)</th>
+                  <th className="py-2 pr-2 text-right" style={{ width: "10%" }}>CBM</th>
+                  <th className="py-2 pr-2 text-right" style={{ width: "10%" }}>VGM (kg)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {containers.map((c, i) => {
+                  const m = metricByRef.get(c.id);
+                  const allocated = (m?.allocationCount ?? 0) > 0;
+                  return (
+                    <tr key={c.id} className="border-b border-zinc-100 align-top">
+                      <td className="py-2 pr-2 text-zinc-500">{i + 1}</td>
+                      <td className="py-2 pr-2 font-medium">{c.containerNo ?? "-"}</td>
+                      <td className="py-2 pr-2">{c.containerType ?? "-"}</td>
+                      <td className="py-2 pr-2">{c.sealNo ?? "-"}</td>
+                      {/* 배분이 없으면 '0'이 아니라 '-' — 0개 적입과 미배분은 다르다. */}
+                      <td className="py-2 pr-2 text-right tabular-nums">
+                        {allocated ? m!.packages : "-"}
+                      </td>
+                      <td className="py-2 pr-2 text-right tabular-nums">
+                        {allocated ? `${m!.grossWeightKg}${m!.gwIncomplete ? "*" : ""}` : "-"}
+                      </td>
+                      <td className="py-2 pr-2 text-right tabular-nums">
+                        {allocated ? `${m!.cbm}${m!.cbmIncomplete ? "*" : ""}` : "-"}
+                      </td>
+                      <td className="py-2 pr-2 text-right tabular-nums">
+                        {c.vgmKg ?? "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-blue-800 font-semibold">
+                  <td className="py-2 pr-2" colSpan={4}>
+                    TOTAL ({containers.length} CNTR)
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums">{ctnPackages}</td>
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {ctnGw}
+                    {ctnIncomplete ? "*" : ""}
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {ctnCbm}
+                    {ctnIncomplete ? "*" : ""}
+                  </td>
+                  {/* VGM 은 입력값 — 파생 G.W. 합과 별개이며 상호검증하지 않는다. */}
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {hasVgm ? ctnVgm : "-"}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+            <p className="mt-1 text-[11px] text-zinc-400">
+              * Packages, G.W. and CBM per container are prorated from the cargo
+              lines by allocated package count; lines without package count,
+              weight or volume are excluded from that share. VGM is a declared
+              value and is not derived from the figures above.
+            </p>
+          </div>
+        )}
 
         {/* Shipping Marks */}
         <div className="mb-8">

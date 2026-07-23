@@ -26,7 +26,7 @@ const ECHO_FIELDS = [
   "pod",
   "bookingNo",
   "blNo",
-  "containerNo",
+  // containerNo 없음(P5.2 사장) — 컨테이너는 적입 카드(save_shipment_containers)로.
   "incoterms",
   "status",
   "notes",
@@ -117,7 +117,6 @@ function parseShipmentForm(formData: FormData): ShipmentInput {
     pod: get("pod"),
     bookingNo: get("bookingNo"),
     blNo: get("blNo"),
-    containerNo: get("containerNo"),
     incoterms: get("incoterms"),
     status: get("status") ?? "draft",
     notes: get("notes"),
