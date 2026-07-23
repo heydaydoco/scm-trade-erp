@@ -7,6 +7,7 @@ import {
   getShipmentCargo,
   listShippableOrderLines,
 } from "@/services/shipmentCargo";
+import { getShipmentContainers } from "@/services/shipmentContainers";
 import {
   issuableCombos,
   listIssuableLines,
@@ -18,6 +19,7 @@ import { SELLER } from "@/config/company";
 import Link from "next/link";
 import { ShipmentForm, type OrderOption } from "../ShipmentForm";
 import { CargoCard } from "./CargoCard";
+import { ContainerCard } from "./ContainerCard";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
 import { CURRENCY_SYMBOL, CUSTOMS_DECL_STATUS, DECL_TYPE, labelOf } from "@/services/codes";
@@ -41,6 +43,7 @@ export default async function EditShipmentPage({
     tradeDocs,
     issuable,
     customsDecls,
+    stuffing,
   ] = await Promise.all([
     getShipment(id),
     listPartners(),
@@ -51,6 +54,7 @@ export default async function EditShipmentPage({
     listTradeDocumentsForShipment(id),
     listIssuableLines(id),
     listCustomsDeclarationsForShipment(id),
+    getShipmentContainers(id),
   ]);
   if (!shipment) notFound();
 
@@ -155,8 +159,8 @@ export default async function EditShipmentPage({
           <span className="font-mono font-medium">
             {activeDocs.map((d) => d.docNumber).join(", ")}
           </span>{" "}
-          발행 중 — 이 선적의 <b>화물 내역·당사자 저장이 잠깁니다</b>(화인만 별도
-          저장 가능). 수정하려면 아래 무역서류를 <b>취소 → 수정 → 재발행</b>{" "}
+          발행 중 — 이 선적의 <b>화물 내역·당사자 저장이 잠깁니다</b>(화인·적입은
+          별도 저장 가능). 수정하려면 아래 무역서류를 <b>취소 → 수정 → 재발행</b>{" "}
           하세요(재발행 시 새 번호).
         </div>
       )}
@@ -171,6 +175,15 @@ export default async function EditShipmentPage({
         shippable={shippable}
         partner={partnerLike}
         seller={sellerLike}
+      />
+
+      {/* ---------- 적입 (P5.2 — 컨테이너·배분·VGM) ---------- */}
+      <ContainerCard
+        shipmentId={shipment.id}
+        cancelled={shipment.status === "cancelled"}
+        initialContainers={stuffing.containers}
+        initialAllocations={stuffing.allocations}
+        cargoLines={cargo.lines}
       />
 
       {/* ---------- 무역서류 (P4.5 — CI/PL 발행·이력) ---------- */}
