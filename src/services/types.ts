@@ -721,6 +721,35 @@ export interface ShippableOrderLine {
   openQty: number; // 음수 = 초과 선적(차단 아님, 원칙 8)
 }
 
+/* ---------- P5.2 적입(E5) — 컨테이너 실측 · 라인 배분 ---------- */
+
+/**
+ * 컨테이너 실측 1건 — **전표가 아니라 선적 하위 실측 기록**이다(채번 없음, 인쇄물 없음).
+ * 텍스트 3필드는 입력 원문의 정규화(btrim)만 거친 값 — 대문자 강제·ISO 체크디지트
+ * 검증을 하지 않는다(있는 그대로 기록하는 것이 실측 기록의 원칙).
+ * vgm_kg 는 **입력값**이다 — 배분에서 파생되는 G.W. 합과 별개이며 상호검증하지 않는다.
+ */
+export interface ShipmentContainer {
+  id: string;
+  containerNo: string | null;
+  containerType: string | null;
+  sealNo: string | null;
+  vgmKg: number | null;
+}
+
+/**
+ * 컨테이너 × 화물라인 포장수 배분 — 선택적이다(배분 없이 컨테이너만 기록해도 정상).
+ * 과배분(라인 포장수 초과)·포장수 미기재 라인 배분을 서버가 막지 않는다 — UI 경고 담당.
+ * ⚠️ **무참조 리프**: 이 id 는 어떤 전표·스냅샷도 참조하지 않으며 앞으로도 금지다
+ *    (그래서 저장이 전량교체이고 감사 트리거도 붙이지 않는다 — P5.2 churn 판정).
+ */
+export interface ShipmentContainerAllocation {
+  id: string;
+  containerId: string;
+  shipmentLineId: string;
+  allocatedPackageCount: number;
+}
+
 /* ---------- P4.5 무역서류 CI/PL — 발행=스냅샷 전량, 인쇄는 이것만 본다 ---------- */
 
 /**

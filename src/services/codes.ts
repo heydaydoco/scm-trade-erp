@@ -138,6 +138,23 @@ export const SHIPMENT_PARTY_ROLES: Code[] = [
   { code: "notify", label: "Notify Party (통지처)" },
 ];
 
+/**
+ * 컨테이너 타입 추천값 (P5.2 적입 — datalist 힌트용, **자유 입력 허용**).
+ *
+ * ⚠️ 코드테이블이 아니라 제안 목록이다 — container_type 은 자유 텍스트이고 서버는
+ *    btrim 정규화만 한다(대문자 강제·ISO 검증 금지). 여기 없는 타입도 정상 입력이다.
+ *    공칭 내용적 자문(lib/containerSpecs)은 앞 4종에만 붙는다(정확일치일 때만).
+ */
+export const CONTAINER_TYPE_SUGGESTIONS: string[] = [
+  "20GP",
+  "40GP",
+  "40HC",
+  "45HC",
+  "20RF",
+  "40RF",
+  "LCL",
+];
+
 /** 마일스톤 유형 (P3.2, 원칙 4 코드테이블) — 기일엔진(P3.3) 원천. 해상·항공·수출입 공용. */
 export const MILESTONE_TYPES: Code[] = [
   { code: "doc_cutoff", label: "서류마감 (S/I Cut-off)" },
