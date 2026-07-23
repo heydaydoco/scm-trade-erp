@@ -221,7 +221,7 @@ stock_movements(id, 일시, type_code, item_id, location_id, qty±, ref_type, re
 - E2. Shipping Instruction (S/I) 작성·전달 — shipment_parties 도입 후(P4) `[P3]`
 - E3. 선적 마일스톤 (서류마감/Cargo Closing/ETD/ETA/VGM) + **기일 역산 알림** ✅ *마일스톤(P3.2) + 기일 역산 알림(P3.3 — 앱내 임박기일 목록 D-7/3/1·KST 기준·홈 배지)* `[P3]`
 - E4. 분할선적 차수 관리 (1 SO → N 선적) — 주문↔선적 연결(M:N)은 *P3.2 구현*, 수량 배분 추적은 P4 `[P4]`
-- E5. 컨테이너 적입(CBM/적입계획), 쉬핑마크, VGM `[P5]`
+- E5. 컨테이너 적입(CBM/적입계획), 쉬핑마크, VGM ✅ *구현(P5.2 — shipment_containers 컨테이너 실측(번호·타입·씰·VGM) + shipment_container_allocations 라인 포장수 배분. 적입 지표(배분 포장수 합·비례 G.W./CBM·용적률)는 전부 **파생 계산·표시 전용·저장 금지**. 쉬핑마크는 P4.4/P4.5c0 기구현)* `[P5]`
 - E6. 수출 통관 (수출신고, 신고수리, 적재의무기한=수리일+30일) ✅ *구현(P5.1 — customs_declarations 수출신고: 신고/수리 상태·세관 신고번호(입력값만)·적재의무기한=coalesce(연장승인일, 수리일+30) **파생 계산·저장 없음**·기일엔진 5번째 소스)* `[P5]`
 - E7. 무역서류 생성기 (CI / PL / B/L draft / C/O) — 한 데이터원에서 생성, 교차검증 `[P4]`
 - E8. FTA 원산지 관리 (PSR 충족, C/O 발급, 인증수출자) `[P7]`
@@ -370,6 +370,20 @@ customs_declarations(id, decl_doc_no, decl_type[export/import], shipment_id, sta
    --    적재의무기한은 컬럼 없음 — coalesce(loading_deadline_extended, acceptance_date+30) 계산 온리.
    --    쓰기=SECURITY DEFINER RPC 2종(save_customs_declaration·cancel_customs_declaration)뿐. 한 선적에
    --    수출+수입 신고 0~N 공존(검증은 shipment.direction 방향 일치 규칙 담당).
+shipment_containers(id, shipment_id, container_no, container_type, seal_no, vgm_kg)
+shipment_container_allocations(id, container_id, shipment_line_id, allocated_package_count)
+   -- ※ P5.2 실구현(E5 적입): **전표 아님 = 선적 하위 실측 기록**(채번 없음·인쇄물 없음·문서흐름 편입 없음).
+   --    shipment_id / container_id / shipment_line_id 전부 **cascade**(동일 전표 하위 실측 기록 원칙 —
+   --    hard FK RESTRICT 는 전표-대-전표 발행 앵커 전용이므로 hard 홉 수는 3 그대로).
+   --    텍스트 3필드는 정규화(btrim)만 — 대문자 강제·ISO 체크디지트 검증 금지(입력 기록 원칙).
+   --    vgm_kg 는 **입력값**, 배분에서 파생되는 G.W. 합과 별개 — 상호검증하지 않는다.
+   --    **적입 지표는 전부 파생 계산·표시 전용, 저장 컬럼 없음**(반올림은 cargoLogic S/I 총계 규약 재사용,
+   --    `lib/containerSpecs` 공칭 내용적은 **자문 표시 전용**·type 정확일치 시만).
+   --    쓰기 = SECURITY DEFINER RPC `save_shipment_containers` 1종뿐(출생 봉인 revoke→grant select,
+   --    **봉인 기준선 객체 32→34**). 컨테이너 = id-diff-upsert, **배분 = 전량교체**(배분 id 외부 참조 금지 —
+   --    무참조 리프라 감사 트리거도 shipment_containers 1종만). 발행(issued CI/PL) **잠금 비대상**(화인 동급).
+   --    과배분(라인 포장수 초과)은 **서버 허용 + UI 경고**, (컨테이너×라인) 중복은 **차단**(unique).
+   --    전 필드가 빈 컨테이너 행도 허용(실측 기록 원칙 — 번호 미배정 상태가 정당).
 lc_terms(shipment_id, lc_number, issuing_bank, amount, tolerance,
          expiry_date, latest_shipment_date, presentation_days, partial_allowed, transship_allowed)
 ```
@@ -523,6 +537,14 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
     - 🔑 **오너 셸 = PowerShell 전제** — 오너에게 셸 명령을 안내할 때 cmd 문법(`rmdir /s /q`) 금지, PowerShell 문법(`Remove-Item -Recurse -Force`)으로 안내한다(dev `.next` 삭제 안내에서 cmd 문법 사고).
     - 🔑 **Turbopack dev [id] 전면 404** — `next dev`(Turbopack)가 전 동적 `[id]` 상세 라우트를 404 내는 사례 관측(신규뿐 아니라 기존 `/partners/[id]` 등도 — production `next start`·배포본은 정상). **코드 문제로 오인 금지**, 해소는 dev 재시작 + `.next` 삭제.
     - **백로그**: ① **Playwright 재설치**(이번 미설치 — fetch 스모크로 대행, 재설치 시 렌더 실물 대조 복원) ② 발번 `lpad` 999건/월 절단·충돌(전 단계부터 잔존) ③ **broker 관세사 마스터 편입**(현재 자유텍스트 — companies 거래처 유형에 관세사/포워더 없음) ④ **수입 세금 납부기한 기일소스**(결제조건 모델 필요) ⑤ E5 적입 = P5.2.
+  - ✅ **P5.2 적입(E5 — 컨테이너·배분·VGM) 완료·종결** (2026-07-23, 커밋 `2245c9c`(a 마이그레이션)→`6ba59e7`(b 코드계층)→`3afe81b`(c 화면)→`540ff4e`(d 헤더 사장+S/I)→`ea67afe`(적대검증 교정))
+    - **테이블/RPC**: 신규 `shipment_containers` · `shipment_container_allocations` + RPC 1종 `save_shipment_containers`(SECURITY DEFINER·유일 쓰기 경로·컨테이너 id-diff-upsert·**발행 잠금 비대상 = 화인(update_shipment_marks) 동급**). **봉인 기준선 객체 32→34.**
+    - **파생 전용 원칙**: 적입 지표(배분 포장수 합·비례 G.W./CBM·용적률 등)는 **전부 파생 계산·표시 전용, 저장 금지**. 반올림은 **cargoLogic S/I 총계 규약**(`docFlow.round6`) 재사용 — 적입 전용 반올림 발명 금지. `lib/containerSpecs` 공칭 내용적은 **자문 표시 전용**.
+    - **배분**: **전량교체**(delete-all + insert) · **배분 id 외부 참조 금지**(무참조 리프) · 과배분(라인 포장수 초과)은 **서버 허용 + UI 경고** · (컨테이너×라인) 중복은 **차단**(unique 제약).
+    - **`shipments.container_no` 사장**: 폼·읽기체인·S/I 셀에서 제거, **컬럼은 존치**. 잠긴 `save_shipment` 가 무조건 대입하므로 **선적 재저장 시 값이 NULL 이 되는 것은 사장의 정의된 귀결**(아키텍트 판정 ⓐ). **기발행 `trade_documents` 의 container_no 스냅샷은 불변.**
+    - **전 필드 빈 컨테이너 행 = 허용**(실측 기록 원칙 — 번호 미배정 상태가 정당, 아키텍트 판정 ⓑ).
+    - **S/I 만 CONTAINERS 섹션 이관** — 컨테이너 0건이면 **섹션 자체 생략**.
+    - **백로그(별도 승인 건)**: ① CI/PL 스냅샷 적입 확장 ② 미배정 컨테이너 `TBA` 인쇄 표기.
 - **P5 — 통관 + 로트/시리얼 + 검수 + BOM**: 수출입 통관, 추적성, QC, BOM
 - **P6 — ATP/할당/백오더 + L/C + RMA + 알림엔진**: 공급 제약 처리, 결제, 반품
 - **P7 — RFQ/벤더평가 + FTA + 결재워크플로 + 실사**: 구매 고도화, 원산지, 승인
@@ -547,4 +569,4 @@ approvals(id, doc_type, doc_id, step, approver, status, acted_at)
 
 ---
 
-*문서 버전: v2.8 · P0~P3 완료 + **P4.0~P4.6 완료·종결 = P4(진짜 ERP) 1차 완성선 100%**(2026-07-19) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** / **P4.6 문서 흐름 추적(조회 전용) — /flow SO-허브 DAG · chainLogic 어휘 사전 단일 진실 · canonical 9엣지(출고→청구 없음: CI 선적 앵커) · 경계 노드 · CI mono-SO 메타 · stale '연결 끊김' 폴백 · 취소/역분개 표시. 쓰기 0 · DB 무변경(기준선 31) · 신규 의존성 0 · Vitest 253 · 적대검증 6축 · 표식 풀체인 E2E 전 시나리오 통과 · 정리 잔존 0** (객체 31·위반 0). **P4 1차 완성선 100% 도달.** / **P5.1 통관신고(수출 E6·수입 E9) 완료·종결**(2026-07-21, 커밋 57e1d46~18938d1+3f9f9e6) — `customs_declarations` 단일 전표(헤더 온리·인쇄물 없음)·`shipment_id` **hard FK RESTRICT**(전표-대-전표 hard 홉 3번째·발행 앵커 원칙)·수입 세액 4필드 **기록만**(계산·단정 금지)·적재의무기한 파생저장 없음(수리일+30 계산 온리 = 기일엔진 5번째 소스)·SECURITY DEFINER RPC 2종 봉인(상태 전이·방향·전용필드·불가분 서버검증)·`chainLogic` 9번째 전표 + `docChain` 10번째 엣지(선적→통관신고)·`/flow/customs` 자동 성립·**봉인 기준선 객체 31→32**·Vitest 307·변경분 적대검증 5건(minor/nit) 수정·**배포본 스모크 전항목 PASS**·스팟체크 게이트 = **오너 직권 지시(스팟체크 클코 대행)**·1회성 정리 SQL 사후검증 8대상 잔존 0. E5 적입(CBM·마크·VGM)=P5.2. **다음: P5+ (오너·아키텍트 별도 논의).***
+*문서 버전: v2.9 · P0~P3 완료 + **P4.0~P4.6 완료·종결 = P4(진짜 ERP) 1차 완성선 100%**(2026-07-19) — 발번·날짜 전면 KST화 / 마스터 감사 / `000_baseline.sql` 재구축 복원 / `stock_movements` 추가전용 원장·권한 봉인·역분개(D1·D2·D3) / 입고 참조생성·`GR_IN` 전기·잔량 뷰·부분입고·세대 도장·잔량 소비 가드(C5) / 출고 참조생성·`DLV_OUT` 전기·부분출고·마이너스 경고 후 허용·거래명세서 인쇄(B8) / P4.3f uom 폴백 정정('PCS' 발명 금지) / P4.4 선적 화물 라인(diff-upsert·동시성 베이스라인·소비 가드 3겹) + 당사자 스냅샷(인쇄 불변) + S/I 인쇄(단위별·포장유형별 TOTAL·금액 부재) / P4.4h 구세대 봉인 하드닝 — 쓰기=SECURITY DEFINER RPC 단일 경로·직접 REST 쓰기 사망·전면 스캔 감사 격상 / **P4.5 무역서류(CI/PL) 실체화 — 발행=CI+PL 세트=번호 1개(CI-YYYYMM-NNN)·발행 후 불변(취소·재발행만)·전량 스냅샷·부분 문서 스코프·잠금 가드 3종·update_shipment_marks(25종째)·공용 인쇄 레이아웃·미리보기=저장값 십진 동치·Vitest 218** / **P4.6 문서 흐름 추적(조회 전용) — /flow SO-허브 DAG · chainLogic 어휘 사전 단일 진실 · canonical 9엣지(출고→청구 없음: CI 선적 앵커) · 경계 노드 · CI mono-SO 메타 · stale '연결 끊김' 폴백 · 취소/역분개 표시. 쓰기 0 · DB 무변경(기준선 31) · 신규 의존성 0 · Vitest 253 · 적대검증 6축 · 표식 풀체인 E2E 전 시나리오 통과 · 정리 잔존 0** (객체 31·위반 0). **P4 1차 완성선 100% 도달.** / **P5.1 통관신고(수출 E6·수입 E9) 완료·종결**(2026-07-21, 커밋 57e1d46~18938d1+3f9f9e6) — `customs_declarations` 단일 전표(헤더 온리·인쇄물 없음)·`shipment_id` **hard FK RESTRICT**(전표-대-전표 hard 홉 3번째·발행 앵커 원칙)·수입 세액 4필드 **기록만**(계산·단정 금지)·적재의무기한 파생저장 없음(수리일+30 계산 온리 = 기일엔진 5번째 소스)·SECURITY DEFINER RPC 2종 봉인(상태 전이·방향·전용필드·불가분 서버검증)·`chainLogic` 9번째 전표 + `docChain` 10번째 엣지(선적→통관신고)·`/flow/customs` 자동 성립·**봉인 기준선 객체 31→32**·Vitest 307·변경분 적대검증 5건(minor/nit) 수정·**배포본 스모크 전항목 PASS**·스팟체크 게이트 = **오너 직권 지시(스팟체크 클코 대행)**·1회성 정리 SQL 사후검증 8대상 잔존 0. / **P5.2 적입(E5 — 컨테이너·배분·VGM) 완료·종결**(2026-07-23, 커밋 2245c9c~ea67afe) — 신규 `shipment_containers`·`shipment_container_allocations` + RPC 1종 `save_shipment_containers`(SECURITY DEFINER·컨테이너 diff-upsert·**발행 잠금 비대상=화인 동급**)·**봉인 기준선 객체 32→34**·적입 지표는 **전부 파생 계산·표시 전용·저장 금지**(반올림 = cargoLogic S/I 총계 규약, `containerSpecs` 공칭 내용적 = 자문 표시 전용)·**배분 = 전량교체**(배분 id 외부 참조 금지·과배분 서버 허용+UI 경고·(컨테이너×라인) 중복 차단)·`shipments.container_no` **사장**(폼·읽기체인·S/I 셀 제거, 컬럼 존치 — 재저장 시 NULL화는 사장의 정의된 귀결, 기발행 trade_documents 스냅샷 불변)·전 필드 빈 컨테이너 행 허용(실측 기록 원칙)·**S/I 만 CONTAINERS 섹션 이관**(0건이면 섹션 생략)·Vitest 336·변경분 5차원 적대검증 확정 8건 수정·1회성 정리 SQL v2 사후검증 19행 전부 정상·잔여물 0. 백로그(별도 승인 건): CI/PL 스냅샷 적입 확장 · 미배정 컨테이너 TBA 인쇄 표기. **다음: P5+ (오너·아키텍트 별도 논의).***
