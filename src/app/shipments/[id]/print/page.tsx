@@ -83,11 +83,18 @@ export default async function ShipmentPrintPage({
   );
   const ctnVgm = sumFinite(containers.map((c) => c.vgmKg));
   const hasVgm = containers.some((c) => c.vgmKg != null);
-  // 하나라도 원값이 없으면 합계가 '전부'가 아니다 — 별표로 표시하고 각주로 설명한다.
-  const ctnIncomplete = containers.some(
-    (c) =>
-      metricByRef.get(c.id)?.gwIncomplete ||
-      metricByRef.get(c.id)?.cbmIncomplete,
+  // 배분이 한 건도 없으면 세 총계는 '0'이 아니라 '-'다 — 0개 적입과 미배분은 다르다
+  // (행 단위와 같은 규칙. 같은 페이지 화물표의 hasGw/hasCbm 선례).
+  const hasAlloc = containers.some(
+    (c) => (metricByRef.get(c.id)?.allocationCount ?? 0) > 0,
+  );
+  // 별표(일부만 합산)는 G.W./CBM 을 **따로** 판정한다 — 한 덩어리로 묶으면 결측이
+  // 없는 합계에도 '일부만 합산'이라는 사실 주장이 붙는다(적대검증 확정 건).
+  const ctnGwIncomplete = containers.some(
+    (c) => metricByRef.get(c.id)?.gwIncomplete,
+  );
+  const ctnCbmIncomplete = containers.some(
+    (c) => metricByRef.get(c.id)?.cbmIncomplete,
   );
 
   const partyLabel: Record<string, string> = {
@@ -320,14 +327,14 @@ export default async function ShipmentPrintPage({
                   <td className="py-2 pr-2" colSpan={4}>
                     TOTAL ({containers.length} CNTR)
                   </td>
-                  <td className="py-2 pr-2 text-right tabular-nums">{ctnPackages}</td>
                   <td className="py-2 pr-2 text-right tabular-nums">
-                    {ctnGw}
-                    {ctnIncomplete ? "*" : ""}
+                    {hasAlloc ? ctnPackages : "-"}
                   </td>
                   <td className="py-2 pr-2 text-right tabular-nums">
-                    {ctnCbm}
-                    {ctnIncomplete ? "*" : ""}
+                    {hasAlloc ? `${ctnGw}${ctnGwIncomplete ? "*" : ""}` : "-"}
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {hasAlloc ? `${ctnCbm}${ctnCbmIncomplete ? "*" : ""}` : "-"}
                   </td>
                   {/* VGM 은 입력값 — 파생 G.W. 합과 별개이며 상호검증하지 않는다. */}
                   <td className="py-2 pr-2 text-right tabular-nums">
@@ -336,12 +343,16 @@ export default async function ShipmentPrintPage({
                 </tr>
               </tfoot>
             </table>
-            <p className="mt-1 text-[11px] text-zinc-400">
-              * Packages, G.W. and CBM per container are prorated from the cargo
-              lines by allocated package count; lines without package count,
-              weight or volume are excluded from that share. VGM is a declared
-              value and is not derived from the figures above.
-            </p>
+            {/* 각주는 배분이 있을 때만 — 배분이 없으면 설명할 파생값 자체가 없다. */}
+            {hasAlloc && (
+              <p className="mt-1 text-[11px] text-zinc-400">
+                * Packages are the allocated package counts as entered. G.W. and
+                CBM per container are prorated from the cargo lines by allocated
+                package count; lines without package count, weight or volume are
+                excluded from that share (marked *). VGM is a declared value and
+                is not derived from the figures above.
+              </p>
+            )}
           </div>
         )}
 

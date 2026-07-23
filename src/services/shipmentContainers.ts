@@ -193,8 +193,10 @@ export async function saveShipmentContainers(input: {
     (r) => !known.has(r.id),
   );
   if (foreign.length > 0) {
+    // 원인을 단정하지 않는다 — 다른 화면의 추가일 수도, 이 화면의 저장 후 동기화
+    // 조회가 실패해 베이스라인이 낡은 것일 수도 있다(둘 다 처방은 새로고침).
     throw new Error(
-      `다른 화면에서 적입 내역이 변경되었습니다(이 화면이 모르는 컨테이너 ${foreign.length}건). ` +
+      `이 화면의 적입 내역이 최신이 아닙니다(화면이 모르는 컨테이너 ${foreign.length}건). ` +
         `화면을 새로고침해 최신 내역을 확인한 뒤 다시 저장하세요.`,
     );
   }

@@ -89,6 +89,18 @@ describe("lineAllocationStatus — 라인 포장수 대비 배분 잔여·과배
     expect(l3.over).toBe(false); // 판단 불가를 '초과'로 단정하지 않는다
   });
 
+  it("★여러 컨테이너에 나눠 담은 합이 포장수를 넘으면 과배분 — 컨테이너별 판정이 아니다", () => {
+    // 컨테이너 하나만 보면 6·6 둘 다 포장수 10 이하다. 합산해야만 초과가 드러난다.
+    const st = lineAllocationStatus(LINES, [
+      { containerRef: "c1", shipmentLineId: "L1", allocatedPackageCount: 6 },
+      { containerRef: "c2", shipmentLineId: "L1", allocatedPackageCount: 6 },
+    ]);
+    const l1 = st.find((s) => s.lineId === "L1")!;
+    expect(l1.allocated).toBe(12);
+    expect(l1.remaining).toBe(-2);
+    expect(l1.over).toBe(true);
+  });
+
   it("배분이 없는 라인도 전량 잔여로 나온다(라인 순서 보존)", () => {
     const st = lineAllocationStatus(LINES, []);
     expect(st.map((s) => s.lineId)).toEqual(["L1", "L2", "L3"]);
@@ -230,6 +242,16 @@ describe("nominalCbmOf — 공칭 내용적(type 정확일치만)", () => {
 
   it("앞뒤 공백은 저장 정규화(btrim)와 같은 처리 — 그 외 변형은 없다", () => {
     expect(nominalCbmOf("  40HC  ")).toBe(76.4);
+  });
+
+  it("★타입은 자유 입력이다 — Object.prototype 상속 키를 사전 항목으로 오인하지 않는다", () => {
+    expect(nominalCbmOf("constructor")).toBeNull();
+    expect(nominalCbmOf("toString")).toBeNull();
+    expect(nominalCbmOf("valueOf")).toBeNull();
+    expect(nominalCbmOf("hasOwnProperty")).toBeNull();
+    expect(nominalCbmOf("__proto__")).toBeNull();
+    // 그 함수가 분모로 새면 용적률이 NaN 이 된다 — 여기서 막혀야 한다.
+    expect(utilizationOf(10, "constructor")).toBeNull();
   });
 
   it("사전은 4종뿐 — 임의 확장 금지(스펙 확정값)", () => {

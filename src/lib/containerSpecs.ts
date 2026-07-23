@@ -18,10 +18,19 @@ export const CONTAINER_NOMINAL_CBM: Readonly<Record<string, number>> = {
   "45HC": 86.0,
 };
 
-/** 컨테이너 타입의 공칭 내용적(m³) — 사전에 없으면 null(자문 없음). */
+/**
+ * 컨테이너 타입의 공칭 내용적(m³) — 사전에 없으면 null(자문 없음).
+ *
+ * ⚠️ 자기 키만 본다(Object.hasOwn) — 타입은 **자유 입력**이라 사용자가 "constructor"
+ *    "toString" 같은 값을 칠 수 있고, 그냥 인덱싱하면 Object.prototype 의 함수가
+ *    number 로 흘러들어 용적률이 NaN 이 된다(적대검증 확정 건).
+ */
 export function nominalCbmOf(
   containerType: string | null | undefined,
 ): number | null {
   if (!containerType) return null;
-  return CONTAINER_NOMINAL_CBM[containerType.trim()] ?? null;
+  const key = containerType.trim();
+  return Object.hasOwn(CONTAINER_NOMINAL_CBM, key)
+    ? CONTAINER_NOMINAL_CBM[key]
+    : null;
 }

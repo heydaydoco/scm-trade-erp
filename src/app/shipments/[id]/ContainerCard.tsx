@@ -56,9 +56,19 @@ function isPositiveInt(v: string): boolean {
   return Number.isFinite(n) && Number.isInteger(n) && n > 0;
 }
 
+// 로케일 고정 — 클라이언트 컴포넌트의 SSR·CSR 표기가 갈리지 않게(폼 선례와 동일).
 function fmt(n: number): string {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  return n.toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
+
+/**
+ * 배분 줄의 상태 — payload 에 실리는 줄과 실리지 않는 줄을 화면이 구분해 말하기 위한 축.
+ *  ok         : 라인 실존 + 포장수가 양의 정수 → 저장된다
+ *  ghost      : 고른 화물 라인이 지금은 없다(다른 화면에서 삭제됨) → 저장 불가
+ *  incomplete : 뭔가 입력했지만 아직 배분이 아니다(라인만·수량만·0·소수·음수) → 저장 안 됨
+ *  empty      : 아무것도 안 쓴 줄 → 조용히 무시해도 되는 유일한 경우
+ */
+type AllocState = "ok" | "ghost" | "incomplete" | "empty";
 
 export function ContainerCard({
   shipmentId,
@@ -189,11 +199,32 @@ export function ContainerCard({
     );
   }
 
-  /* ---------- payload — 유효한 것만 싣는다 ---------- */
-  // 배분은 라인·수량이 갖춰진 줄만(비어 있는 입력 줄은 "아직 안 쓴 줄"이다).
+  /* ---------- payload — 유효한 것만 싣되, 빠진 줄은 반드시 말한다 ---------- */
+  // ⚠️ 적대검증 확정: 예전엔 라인을 고르고 수량을 잘못 쓴 줄이 **경고 없이** payload
+  //    에서 빠지고 초록 성공 배너가 떴다(사용자 입력의 조용한 폐기). 이제는 상태를
+  //    분류해 화면·확인창이 그 줄을 지목한다. 막지는 않는다(원칙 8).
+  const knownLineIds = new Set(cargoLines.map((l) => l.id));
+  const allocStateByKey = new Map<string, AllocState>();
+  for (const r of rows) {
+    for (const a of r.allocs) {
+      const hasLine = a.shipmentLineId !== "";
+      const hasCount = a.count.trim() !== "";
+      let st: AllocState;
+      if (hasLine && !knownLineIds.has(a.shipmentLineId)) st = "ghost";
+      else if (hasLine && isPositiveInt(a.count)) st = "ok";
+      else if (hasLine || hasCount) st = "incomplete";
+      else st = "empty";
+      allocStateByKey.set(a.key, st);
+    }
+  }
+  const ghostCount = [...allocStateByKey.values()].filter((s) => s === "ghost").length;
+  const incompleteCount = [...allocStateByKey.values()].filter(
+    (s) => s === "incomplete",
+  ).length;
+
   const validAllocs: AllocationLike[] = rows.flatMap((r) =>
     r.allocs
-      .filter((a) => a.shipmentLineId !== "" && isPositiveInt(a.count))
+      .filter((a) => allocStateByKey.get(a.key) === "ok")
       .map((a) => ({
         containerRef: r.key,
         shipmentLineId: a.shipmentLineId,
@@ -234,7 +265,7 @@ export function ContainerCard({
   for (const r of rows) {
     const seen = new Set<string>();
     for (const a of r.allocs) {
-      if (a.shipmentLineId === "" || !isPositiveInt(a.count)) continue;
+      if (allocStateByKey.get(a.key) !== "ok") continue;
       if (seen.has(a.shipmentLineId)) {
         dupPairs.push(
           `${r.containerNo || "(번호 미입력 컨테이너)"} · ${
@@ -262,6 +293,14 @@ export function ContainerCard({
       return;
     }
     const blocks: string[] = [];
+    if (incompleteCount > 0 || ghostCount > 0) {
+      const parts: string[] = [];
+      if (incompleteCount > 0)
+        parts.push(`· 입력이 덜 된 배분 줄 ${incompleteCount}건(라인 미선택 또는 포장수가 1 이상의 정수가 아님)`);
+      if (ghostCount > 0)
+        parts.push(`· 지금은 없는 화물 라인을 가리키는 배분 줄 ${ghostCount}건(화물 내역에서 삭제된 라인)`);
+      blocks.push(`[저장 제외] 아래 줄은 저장되지 않습니다.\n${parts.join("\n")}`);
+    }
     if (overLines.length > 0) {
       blocks.push(
         "[라인 포장수 초과 배분]\n" +
@@ -439,6 +478,7 @@ export function ContainerCard({
                             const st = a.shipmentLineId
                               ? statusByLine.get(a.shipmentLineId)
                               : undefined;
+                            const as = allocStateByKey.get(a.key) ?? "empty";
                             return (
                               <div
                                 key={a.key}
@@ -473,17 +513,31 @@ export function ContainerCard({
                                   inputMode="numeric"
                                   placeholder="포장수"
                                   className={`w-20 rounded border px-2 py-1 text-right ${
-                                    st?.over
-                                      ? "border-amber-400 bg-amber-50"
-                                      : "border-slate-300"
+                                    as === "incomplete"
+                                      ? "border-red-400 bg-red-50"
+                                      : st?.over
+                                        ? "border-amber-400 bg-amber-50"
+                                        : "border-slate-300"
                                   }`}
                                 />
-                                {st && (
-                                  <span className="text-xs tabular-nums text-slate-500">
-                                    {st.remaining === null
-                                      ? "잔여 판단 불가(포장수 미기재)"
-                                      : `잔여 ${st.remaining}`}
+                                {as === "ghost" ? (
+                                  <span className="text-xs text-red-700">
+                                    삭제된 화물 라인 — 줄을 지우거나 라인을 다시
+                                    선택하세요 (저장되지 않음)
                                   </span>
+                                ) : as === "incomplete" ? (
+                                  <span className="text-xs text-red-700">
+                                    입력이 덜 됐습니다 — 라인 선택 + 1 이상의 정수
+                                    (저장되지 않음)
+                                  </span>
+                                ) : (
+                                  st && (
+                                    <span className="text-xs tabular-nums text-slate-500">
+                                      {st.remaining === null
+                                        ? "잔여 판단 불가(포장수 미기재)"
+                                        : `잔여 ${st.remaining}`}
+                                    </span>
+                                  )
                                 )}
                                 <button
                                   type="button"
@@ -551,6 +605,14 @@ export function ContainerCard({
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
               ⛔ 같은 컨테이너에 같은 화물 라인이 두 번 배분되었습니다(
               {dupPairs.length}건) — 한 줄로 합쳐야 저장할 수 있습니다.
+            </p>
+          )}
+          {(incompleteCount > 0 || ghostCount > 0) && (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
+              ⚠️ 저장되지 않는 배분 줄이 있습니다
+              {incompleteCount > 0 && ` · 입력이 덜 된 줄 ${incompleteCount}건`}
+              {ghostCount > 0 && ` · 삭제된 화물 라인을 가리키는 줄 ${ghostCount}건`}
+              . 막지는 않지만 저장 시 확인합니다(원칙 8).
             </p>
           )}
           {overLines.length > 0 && (

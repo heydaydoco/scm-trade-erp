@@ -205,6 +205,7 @@ export function utilizationOf(
 }
 
 function utilizationRatio(cbm: number, nominal: number | null): number | null {
-  if (nominal === null || nominal <= 0) return null;
+  // Number.isFinite 이중 방어 — 분모가 숫자가 아니면 NaN% 를 화면에 내보내지 않는다.
+  if (nominal === null || !Number.isFinite(nominal) || nominal <= 0) return null;
   return round6(cbm / nominal);
 }

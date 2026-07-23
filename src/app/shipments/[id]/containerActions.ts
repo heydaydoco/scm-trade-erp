@@ -45,6 +45,9 @@ function numOrNull(v: unknown): number | null {
 const PARSE_ERROR =
   "적입 payload 형식이 잘못됐습니다. 화면을 새로고침한 뒤 다시 시도하세요.";
 
+/** allocated_package_count 는 DB 가 integer(int4) — 캐스트 예외 전에 한국어로 막는다. */
+const INT4_MAX = 2147483647;
+
 export async function saveShipmentContainersAction(
   _prev: ContainerFormState,
   formData: FormData,
@@ -124,6 +127,12 @@ export async function saveShipmentContainersAction(
     if (count === null || Number.isNaN(count) || count <= 0 || !Number.isInteger(count)) {
       return {
         error: `배분 포장수는 1 이상의 정수여야 합니다. (${i + 1}번째 배분, 받은 값: ${String(a.allocatedPackageCount ?? "")})`,
+      };
+    }
+    // DB 컬럼은 integer(int4) — 상한을 넘기면 영문 PG 캐스트 예외가 그대로 노출된다.
+    if (count > INT4_MAX) {
+      return {
+        error: `배분 포장수가 너무 큽니다(최대 ${INT4_MAX.toLocaleString("en-US")}). (${i + 1}번째 배분, 받은 값: ${String(a.allocatedPackageCount ?? "")})`,
       };
     }
     // (컨테이너, 라인) 중복은 DB unique 제약 위반이다 — 날것의 예외 전에 한국어로.
