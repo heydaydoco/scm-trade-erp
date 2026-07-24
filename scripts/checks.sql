@@ -36,7 +36,8 @@ order by (v.on_hand < 0) desc, v.item_code nulls last, v.warehouse_code, v.uom;
 
 
 -- ============================================================================
---  ①~⑧ 합격 판정  (이 파일을 통째로 Run 하면 아래 결과가 나옵니다)
+--  합격 판정  (이 파일을 통째로 Run 하면 아래 결과가 나옵니다)
+--  원장 ①~③ · 봉인 ④ⓔ · 재고/원장 ⑤~ⓒ · 무역서류 ㉮~㉰ · 적입 ㉱㉲ (P5.3 추가)
 -- ============================================================================
 
 -- ── ① 유형과 qty 부호가 어긋난 행 ───────────────────────────────────────────
@@ -366,6 +367,83 @@ from (
   order by ref_doc_id, created_at
 ) f
 where f.so_status_before is null
+
+union all
+
+-- ── ㉮ 무역서류: 라인 금액 합 ≠ 헤더 소계 (P4.5) ────────────────────────────
+--  subtotal_amount = Σ round2(라인) 이 발행 시점 계약이다(스냅샷). 어긋나면
+--  스냅샷이 손상됐거나 RPC 를 우회해 라인을 직접 건드린 것이다(FK 로는 못 막는다).
+--  round2 저장이라 십진 동치 — abs 차 > 0.005 만 위반으로 본다.
+select
+  '㉮ 무역서류 라인합↔소계',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select d.id
+  from public.trade_documents d
+  left join public.trade_document_lines l on l.document_id = d.id
+  group by d.id, d.subtotal_amount
+  having abs(coalesce(sum(l.amount), 0) - d.subtotal_amount) > 0.005
+) x
+
+union all
+
+-- ── ㉯ 무역서류: 헤더 총액 ≠ 소계 − 할인 (P4.5) ──────────────────────────────
+select
+  '㉯ 무역서류 총액↔소계−할인',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.trade_documents d
+where abs(d.total_amount - (d.subtotal_amount - d.discount_amount)) > 0.005
+
+union all
+
+-- ── ㉰ 무역서류: 활성(issued) 문서가 취소된 선적을 가리킴 (P4.5 가드) ─────────
+--  취소 가드(trg_shipments_cancel_trade_doc_guard)가 원천 차단하지만, 발행 후
+--  우회 취소가 있었는지 데이터로 재확인한다(FK 는 존재만 보장하지 상태는 못 본다).
+select
+  '㉰ 활성 무역서류↔취소 선적',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from public.trade_documents d
+join public.shipments s on s.id = d.shipment_id
+where d.status = 'issued' and s.status = 'cancelled'
+
+union all
+
+-- ── ㉱ 적입 스냅샷 자기일관: totals.packageCount ≠ Σ컨테이너.packageCount (P5.3) ─
+--  발행 스냅샷은 동결 수치다 — 총계와 컨테이너 합이 어긋나면 스냅샷 생성 로직이
+--  깨졌거나 저장 후 누가 jsonb 를 손댄 것이다. packageCount 는 정수라 정확 비교한다.
+--  (G.W./CBM 은 6자리 정밀 동결값이라 같은 성질이나, 정수 축으로 대표 검산한다.)
+select
+  '㉱ 적입 스냅샷 총계 자기일관',
+  case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
+from (
+  select d.id
+  from public.trade_documents d
+  where d.containers_snapshot is not null
+    and jsonb_typeof(d.containers_snapshot->'containers') = 'array'
+    and jsonb_array_length(d.containers_snapshot->'containers') > 0
+    and (d.containers_snapshot->'totals'->>'packageCount')::numeric
+        is distinct from
+        (select coalesce(sum((c->>'packageCount')::numeric), 0)
+           from jsonb_array_elements(d.containers_snapshot->'containers') c)
+) x
+
+union all
+
+-- ── ㉲ 적입 과배분 현황 (P5.2 — 리포트, 위반 아님) ──────────────────────────
+--  과배분(라인 포장수 초과)은 **서버가 허용**하는 정상 스펙이다(UI 경고만). 여기서는
+--  차단이 아니라 **현황 리포트**로 센다 — '⚠️'가 아니라 참고 수치다(0 이어도 무방).
+--  포장수 null 라인 배분은 판단 불가라 제외한다(초과로 단정하지 않는다).
+select
+  '㉲ 적입 과배분 현황(리포트)',
+  case when count(*) = 0 then '없음' else count(*) || '개 라인(정상 — 서버 허용)' end
+from (
+  select a.shipment_line_id
+  from public.shipment_container_allocations a
+  join public.shipment_lines l on l.id = a.shipment_line_id
+  where l.package_count is not null
+  group by a.shipment_line_id, l.package_count
+  having sum(a.allocated_package_count) > l.package_count
+) x
 
 union all
 

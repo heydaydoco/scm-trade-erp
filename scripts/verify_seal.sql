@@ -1,5 +1,7 @@
 -- ============================================================================
---  권한 봉인 검증 — P4.1 원장 봉인 + P4.4h 구세대 전면 봉인  (읽기 전용 — SELECT만)
+--  권한 봉인 검증 — 상설 스크립트 (읽기 전용 — SELECT만)
+--  P4.1 원장 봉인 + P4.4h 구세대 전면 봉인 이후 전 단계(P4.5·P5.1·P5.2·P5.3)를
+--  동적 전면 스캔으로 커버한다. 기대값은 아래에서 단계별로 갱신한다.
 -- ============================================================================
 --  ⚠️ 왜 `update ... set qty=999` 로 테스트하면 안 되는가:
 --     Supabase SQL Editor 는 **테이블 소유자인 postgres 역할**로 실행된다(상단 Role 표시).
@@ -9,7 +11,7 @@
 --  has_table_privilege('anon', …) 는 역할 상속·PUBLIC 부여까지 전부 계산한 **실효 권한**을
 --  돌려준다. information_schema 를 훑는 것보다 확정적이다.
 --
---  기대값 (P4.5 이후):
+--  기대값 (P5.3 이후):
 --    · '위반(쓰기권한 잔존)' — **0행**. public 의 모든 테이블·뷰에서 anon/authenticated 의
 --      INSERT/UPDATE/DELETE 가 전부 false 여야 한다(알려진 목록 나열이 아니라 전면 스캔).
 --      쓰기는 SECURITY DEFINER RPC 로만: save_quotation·save_sales_order·
@@ -17,9 +19,13 @@
 --      save_shipment_cargo·save_stock_adjustment·reverse_stock_movement·
 --      cancel_* · save_company·save_item·save_fx_rate·save_inquiry (P4.4h 신설 4종)·
 --      save_trade_document·cancel_trade_document (P4.5 신설 2종)·
---      update_shipment_marks (P4.5c0 신설 — marks 전용, 활성 문서 가드 비대상).
---    · 스캔은 동적 전면 스캔이라 P4.5 신규 2테이블(trade_documents·trade_document_lines)도
---      자동 포함된다 — 객체 총수 기대값은 29 → 31.
+--      update_shipment_marks (P4.5c0 신설 — marks 전용, 활성 문서 가드 비대상)·
+--      save_customs_declaration·cancel_customs_declaration (P5.1 신설 2종)·
+--      save_shipment_containers (P5.2 신설 — 적입 실측, 활성 문서 가드 비대상).
+--    · 스캔은 동적 전면 스캔이라 신규 테이블이 자동 포함된다 — 객체 총수 기대값 변천:
+--      P4.4h 29 → P4.5 +2(trade_documents·trade_document_lines) 31 →
+--      P5.1 +1(customs_declarations) 32 → P5.2 +2(shipment_containers·
+--      shipment_container_allocations) **34**. P5.3 은 컬럼 추가뿐이라 **변동 0(34 유지)**.
 --    · '스캔 요약' — 객체 총수가 0이면 스캔 자체가 실패한 것(공허통과 방지 수치).
 --    · fx_rates: INSERT 까지 봉인(P4.4h) — 과거 "select·insert true" 기대값은 폐기됨.
 --    · audit_log: 쓰기 전부 false (insert 는 P4.2 에서 회수 — fn_audit 이 DEFINER 라 감사는 산다).
@@ -47,7 +53,7 @@ select * from (
          '⚠️ true'::text as 값
     from viol v
   union all
-  select '스캔 요약', 'public 테이블·뷰 총수(0이면 스캔 실패)', count(*)::text from scan
+  select '스캔 요약', 'public 테이블·뷰 총수(34 기대 — 0이면 스캔 실패)', count(*)::text from scan
   union all
   select '스캔 요약', '검사한 (객체×롤×권한) 조합수', (count(*) * 6)::text from scan
   union all
