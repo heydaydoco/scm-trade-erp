@@ -401,10 +401,10 @@ describe("합 경로(누적 round6) — tie 가 생기지 않음을 픽스처로
  * ⚠️ **이 섹션은 save_trade_document 가 기록할 containers_snapshot 의 계약이다.**
  *    SQL 이 같은 입력에서 같은 수치를 내야 한다. 기대값 변경은 스펙 개정 사항.
  * ⚠️ **양방향 상호참조(적대검증 반영)**: 이 픽스처 수치를 바꾸면 발행 RPC 의
- *    스냅샷 산식(db/migrations 의 살아있는 save_trade_document 정의 —
- *    p5.3_doc_container_snapshot.sql 의 per_container CTE, 이후 개정판이 있으면
- *    그 파일)도 **함께** 고쳐야 한다. Vitest 는 SQL 을 실행하지 않으므로(Supabase
- *    대시보드 전용·PG 접속 금지) 이 회귀 가드는 TS 편측이다 — SQL 변경 시 수동 대조 필수.
+ *    스냅샷 산식(**현재 살아있는 정의 = p5.3a_doc_container_snapshot_no_vgm.sql 의
+ *    per_container CTE**. p5.3_doc_container_snapshot.sql 은 1차·이력)도 **함께**
+ *    고쳐야 한다. Vitest 는 SQL 을 실행하지 않으므로(Supabase 대시보드 전용·PG 접속
+ *    금지) 이 회귀 가드는 TS 편측이다 — SQL 변경 시 수동 대조 필수.
  *
  * P2 스코프 규칙:
  *  · '이 문서에 포함된 라인'에 배분이 **1건 이상** 걸린 컨테이너만 담는다.

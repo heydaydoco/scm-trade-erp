@@ -419,12 +419,15 @@ select
   '㉱ 적입 스냅샷 자기일관',
   case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
 from (
-  -- (a) 컨테이너 내부: packageCount ↔ 배분합
+  -- (a) 컨테이너 내부: packageCount ↔ 배분합.
+  --  배열 가드를 lateral 소스 안에서 한다(CASE → 비배열/누락이면 '[]') — WHERE 의
+  --  jsonb_typeof 가드는 SRF 호출 전에 걸러진다는 보장을 (b)와 동일한 형태로 맞춘다.
   select d.id
   from public.trade_documents d
-  cross join lateral jsonb_array_elements(d.containers_snapshot->'containers') c
+  cross join lateral jsonb_array_elements(
+    case when jsonb_typeof(d.containers_snapshot->'containers') = 'array'
+         then d.containers_snapshot->'containers' else '[]'::jsonb end) c
   where d.containers_snapshot is not null
-    and jsonb_typeof(d.containers_snapshot->'containers') = 'array'
     and (c->>'packageCount')::numeric
         is distinct from
         (select coalesce(sum((a->>'allocatedPackageCount')::numeric), 0)
