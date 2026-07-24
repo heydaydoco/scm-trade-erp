@@ -1,3 +1,4 @@
+import { documentContainerNoLabel } from "@/services/tradeDocuments";
 import type { TradeDocument } from "@/services/types";
 
 /**
@@ -73,6 +74,16 @@ export function PartyBlocks({ doc }: { doc: TradeDocument }) {
 
 /** 선적정보 스냅샷 그리드 — 값 있는 항목만 (셀 공란 대신 항목 생략). */
 export function ShipmentInfoGrid({ doc }: { doc: TradeDocument }) {
+  // Container No.(P5.3 판정 ②·D9) — 적입 스냅샷 3상태를 단일 규칙으로 옮긴다:
+  //   NULL(P5.3 이전 발행) → 기존 container_no 스칼라 폴백(재인쇄 불변)
+  //   빈 구조(적입 0건)     → 항목 생략(스칼라 폴백 금지)
+  //   값 존재               → 스냅샷 번호 조인(", ", 미확정은 TBA)
+  const containerNoLabel = documentContainerNoLabel(
+    doc.containersSnapshot === null
+      ? null
+      : doc.containersSnapshot.containers.map((c) => c.containerNo),
+    doc.containerNo,
+  );
   const items: [string, string | null][] = [
     ["Shipment No.", doc.shipmentNo],
     ["Transport", doc.transport],
@@ -82,7 +93,7 @@ export function ShipmentInfoGrid({ doc }: { doc: TradeDocument }) {
     ["Carrier", doc.carrier],
     ["B/L No.", doc.blNo],
     ["Booking No.", doc.bookingNo],
-    ["Container No.", doc.containerNo],
+    ["Container No.", containerNoLabel],
   ];
   const present = items.filter(([, v]) => v);
   if (present.length === 0) return null;

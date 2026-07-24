@@ -7,6 +7,7 @@ import {
   weightFillMode,
   weightTotal,
 } from "@/services/tradeDocuments";
+import { displayContainerNo } from "@/services/containerLogic";
 import { PrintDocShell } from "@/components/print/PrintDocShell";
 import styles from "@/components/print/printDoc.module.css";
 import { PartyBlocks, ShipmentInfoGrid } from "../PartyBlocks";
@@ -51,6 +52,12 @@ export default async function PackingListPrintPage({
 
   const fmt = (n: number) =>
     n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+
+  // 적입(P5.3) — **발행 스냅샷만** 읽는다(계산 0·라이브 재조회 0, D2·P3). 스냅샷은
+  // 이미 문서 스코프로 걸러져 있고 수치가 동결돼 있다. null(=P5.3 이전 발행)·빈
+  // 구조(적입 0건)면 섹션을 통째로 생략한다(S/I 0건 생략 선례와 같은 의미론).
+  const snapshotContainers = doc.containersSnapshot?.containers ?? [];
+  const ctnTotals = doc.containersSnapshot?.totals ?? null;
 
   return (
     <PrintDocShell
@@ -182,6 +189,97 @@ export default async function PackingListPrintPage({
           )}
         </div>
       </div>
+
+      {/* ---------- CONTAINERS (적입 — P5.3 스냅샷). 0건이면 섹션 생략(S/I 선례). ----------
+          컬럼 구성은 S/I CONTAINERS 동형(D10). 수치는 발행 시점 동결값을 **그대로**
+          인쇄한다 — 여기서 재계산하지 않는다. 별표(*)는 G.W./CBM 을 따로 판정한
+          동결 플래그를 그대로 표시한다(S/I 와 같은 의미론). */}
+      {snapshotContainers.length > 0 && (
+        <div className={`${styles.avoidBreak} mt-8`}>
+          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            Containers (적입)
+          </h3>
+          <table className={`${styles.docTable} w-full border-collapse text-sm`}>
+            <thead>
+              <tr className="border-b-2 border-blue-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                <th className="py-2 pr-2" style={{ width: "5%" }}>No.</th>
+                <th className="py-2 pr-2" style={{ width: "22%" }}>Container No.</th>
+                <th className="py-2 pr-2" style={{ width: "11%" }}>Type</th>
+                <th className="py-2 pr-2" style={{ width: "16%" }}>Seal No.</th>
+                <th className="py-2 pr-2 text-right" style={{ width: "10%" }}>Packages</th>
+                <th className="py-2 pr-2 text-right" style={{ width: "12%" }}>G.W. (kg)</th>
+                <th className="py-2 pr-2 text-right" style={{ width: "12%" }}>CBM</th>
+                <th className="py-2 text-right" style={{ width: "12%" }}>VGM (kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshotContainers.map((c, i) => {
+                // 스냅샷 컨테이너는 문서 라인 배분이 1건 이상인 것만 담겼다(P2) —
+                // 여기서 '배분 미실시'('-')는 정상적으로 발생하지 않는다. 그럼에도
+                // 방어적으로 배분 유무를 본다(빈 배분이면 '-', S/I 와 같은 규칙).
+                const allocated = c.allocations.length > 0;
+                return (
+                  <tr key={i} className="border-b border-zinc-100 align-top">
+                    <td className="py-2 pr-2 text-zinc-500">{i + 1}</td>
+                    {/* 번호 미확정은 TBA(P4) — 배분 미실시('-')와는 별개 사실이다. */}
+                    <td className="py-2 pr-2 font-medium">{displayContainerNo(c.containerNo)}</td>
+                    <td className="py-2 pr-2">{c.containerType ?? "-"}</td>
+                    <td className="py-2 pr-2">{c.sealNo ?? "-"}</td>
+                    <td className="py-2 pr-2 text-right tabular-nums">
+                      {allocated && c.packageCount !== null ? fmt(c.packageCount) : "-"}
+                    </td>
+                    <td className="py-2 pr-2 text-right tabular-nums">
+                      {allocated && c.grossWeightKg !== null
+                        ? `${fmt(c.grossWeightKg)}${c.gwIncomplete ? "*" : ""}`
+                        : "-"}
+                    </td>
+                    <td className="py-2 pr-2 text-right tabular-nums">
+                      {allocated && c.cbm !== null
+                        ? `${fmt(c.cbm)}${c.cbmIncomplete ? "*" : ""}`
+                        : "-"}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {c.vgmKg !== null ? fmt(c.vgmKg) : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {ctnTotals && (
+              <tfoot>
+                <tr className="border-t-2 border-blue-800 font-semibold">
+                  <td className="py-2 pr-2" colSpan={4}>
+                    TOTAL ({snapshotContainers.length} CNTR)
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {ctnTotals.packageCount !== null ? fmt(ctnTotals.packageCount) : "-"}
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {ctnTotals.grossWeightKg !== null
+                      ? `${fmt(ctnTotals.grossWeightKg)}${ctnTotals.gwIncomplete ? "*" : ""}`
+                      : "-"}
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums">
+                    {ctnTotals.cbm !== null
+                      ? `${fmt(ctnTotals.cbm)}${ctnTotals.cbmIncomplete ? "*" : ""}`
+                      : "-"}
+                  </td>
+                  {/* VGM 총계는 스냅샷 totals 에 없다 — 입력값이라 파생 합의 대상이
+                      아니다(S/I 는 라이브 합을 냈지만 스냅샷은 컨테이너별 값만 동결). */}
+                  <td className="py-2 text-right tabular-nums">-</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          <p className="mt-1 text-[11px] text-zinc-400">
+            * Packages are the allocated package counts as entered. G.W. and CBM per
+            container are prorated from the packed cargo lines by allocated package
+            count; lines without package count, weight or volume are excluded from
+            that share (marked *). VGM is a declared value and is not derived from the
+            figures above. These figures are a snapshot frozen at issuance.
+          </p>
+        </div>
+      )}
 
       {doc.shippingMarks && (
         <div className={`${styles.avoidBreak} mt-8 border-t border-zinc-200 pt-4`}>

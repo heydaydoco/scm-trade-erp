@@ -8,7 +8,7 @@ import {
   packageTotalsByType,
   sumFinite,
 } from "@/services/cargoLogic";
-import { containerMetrics } from "@/services/containerLogic";
+import { containerMetrics, displayContainerNo } from "@/services/containerLogic";
 import { labelOf, TRANSPORT, SHIPMENT_PARTY_ROLES } from "@/services/codes";
 import { PrintButton } from "@/components/PrintButton";
 import type { ShipmentParty } from "@/services/types";
@@ -302,7 +302,8 @@ export default async function ShipmentPrintPage({
                   return (
                     <tr key={c.id} className="border-b border-zinc-100 align-top">
                       <td className="py-2 pr-2 text-zinc-500">{i + 1}</td>
-                      <td className="py-2 pr-2 font-medium">{c.containerNo ?? "-"}</td>
+                      {/* 번호 미확정은 TBA(P5.3 P4·소급) — 배분 미실시('-')와는 별개 사실 */}
+                      <td className="py-2 pr-2 font-medium">{displayContainerNo(c.containerNo)}</td>
                       <td className="py-2 pr-2">{c.containerType ?? "-"}</td>
                       <td className="py-2 pr-2">{c.sealNo ?? "-"}</td>
                       {/* 배분이 없으면 '0'이 아니라 '-' — 0개 적입과 미배분은 다르다. */}
