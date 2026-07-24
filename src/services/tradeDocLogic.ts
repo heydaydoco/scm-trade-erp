@@ -11,6 +11,7 @@
  */
 import { round2 } from "./codes";
 import { round6 } from "./docFlow";
+import { displayContainerNo } from "./containerLogic";
 
 /* ---------- ⓪ pg round(numeric, 2) 동치 반올림 (적대검증 교정) ----------
  *
@@ -295,4 +296,29 @@ export function packingFillMode(lines: readonly PackingLike[]): AllOrNothing {
   const filled = lines.filter(has).length;
   if (filled === 0) return "none";
   return filled === lines.length ? "all" : "partial";
+}
+
+/* ---------- ⑥ P5.3 — 문서 헤더 Container No. 3상태 (판정 ②) ---------- */
+
+/**
+ * 무역서류 헤더의 `Container No.` 표시값 — **소비처 3곳(CI 인쇄·PL 인쇄·무역서류
+ * 상세)의 단일 규칙**이다. `containers_snapshot` 의 3상태를 그대로 옮긴다.
+ *
+ *  · `null`(= P5.3 이전 발행) → 기존 `container_no` 스칼라를 그대로 낸다.
+ *    P4.5 시절 발행된 문서의 재인쇄가 달라지면 **재인쇄 불변 계약** 위반이다.
+ *  · **빈 배열**(= 적입 스코프 0건으로 발행) → `null`(항목 생략).
+ *    스칼라로 폴백하지 **않는다** — 신규 발행 문서의 사실은 스냅샷이고,
+ *    그 스냅샷이 "컨테이너 없음"이라고 말하고 있다.
+ *  · 값 존재 → 스냅샷 번호를 `", "` 로 잇는다. 미확정 번호는 `TBA`(P4).
+ *
+ * ⚠️ `shipments.container_no` 사장 계보는 그대로다 — 발행 RPC 는 스칼라에 새 값을
+ *    쓰지 않는다(기발행 역사값 보존 전용).
+ */
+export function documentContainerNoLabel(
+  snapshotContainerNos: readonly (string | null)[] | null,
+  legacyContainerNo: string | null,
+): string | null {
+  if (snapshotContainerNos === null) return legacyContainerNo;
+  if (snapshotContainerNos.length === 0) return null;
+  return snapshotContainerNos.map(displayContainerNo).join(", ");
 }

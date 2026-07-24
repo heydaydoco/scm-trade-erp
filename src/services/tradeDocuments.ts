@@ -4,6 +4,9 @@ import { SELLER } from "@/config/company";
 import type {
   IssuableLine,
   TradeDocument,
+  TradeDocumentContainer,
+  TradeDocumentContainerAllocation,
+  TradeDocumentContainersSnapshot,
   TradeDocumentIssueInput,
   TradeDocumentLine,
   TradeDocumentListItem,
@@ -183,6 +186,88 @@ function mapPackages(v: unknown): TradeDocumentPackage[] {
       cbm: numOrNull((r.cbm as number | string | null) ?? null),
     };
   });
+}
+
+/* ---------- 적입 스냅샷 매핑 (P5.3) ---------- */
+
+function plainObjectOrNull(v: unknown): Record<string, unknown> | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  return v as Record<string, unknown>;
+}
+
+/** 숫자 아니면 null — NaN 을 인쇄에 흘리지 않는다(mapPackages 계보 + 방어 강화). */
+function snapNum(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function snapStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+/**
+ * `containers_snapshot` → 타입 구조. **하위호환이 이 함수의 존재 이유다.**
+ *
+ *  · `null`/`undefined`/비객체 → `null` = **P5.3 이전 발행**.
+ *    헤더는 `container_no` 스칼라로 폴백하고 섹션은 생략된다(판정 ②).
+ *  · `{ containers: [] }` → 빈 구조 = **적입 스코프 0건으로 발행**. 폴백 금지.
+ *  · 키 결손·타입 이상은 **던지지 않고** 안전한 기본값으로 접는다 —
+ *    데이터 이상으로 인쇄물이 500 을 내면 안 된다(서류는 나와야 한다).
+ */
+export function mapContainers(
+  v: unknown,
+): TradeDocumentContainersSnapshot | null {
+  const root = plainObjectOrNull(v);
+  if (root === null) return null;
+
+  const rawContainers = Array.isArray(root.containers) ? root.containers : [];
+  const containers: TradeDocumentContainer[] = [];
+  for (const rc of rawContainers) {
+    const c = plainObjectOrNull(rc);
+    if (c === null) continue; // 원소가 객체가 아니면 그 원소만 버린다
+    const rawAllocs = Array.isArray(c.allocations) ? c.allocations : [];
+    const allocations: TradeDocumentContainerAllocation[] = [];
+    for (const ra of rawAllocs) {
+      const a = plainObjectOrNull(ra);
+      if (a === null) continue;
+      allocations.push({
+        shipmentLineId: snapStr(a.shipmentLineId),
+        allocatedPackageCount: snapNum(a.allocatedPackageCount),
+      });
+    }
+    containers.push({
+      containerNo: snapStr(c.containerNo),
+      containerType: snapStr(c.containerType),
+      sealNo: snapStr(c.sealNo),
+      vgmKg: snapNum(c.vgmKg),
+      allocations,
+      packageCount: snapNum(c.packageCount),
+      grossWeightKg: snapNum(c.grossWeightKg),
+      cbm: snapNum(c.cbm),
+      // 진짜 true 일 때만 true — truthy 문자열("false")에 속지 않는다.
+      gwIncomplete: c.gwIncomplete === true,
+      cbmIncomplete: c.cbmIncomplete === true,
+    });
+  }
+
+  const t = plainObjectOrNull(root.totals);
+  return {
+    containers,
+    totals:
+      t === null
+        ? null
+        : {
+            packageCount: snapNum(t.packageCount),
+            grossWeightKg: snapNum(t.grossWeightKg),
+            cbm: snapNum(t.cbm),
+            gwIncomplete: t.gwIncomplete === true,
+            cbmIncomplete: t.cbmIncomplete === true,
+          },
+  };
 }
 
 function mapDoc(row: TdRow): TradeDocument {

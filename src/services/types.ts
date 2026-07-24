@@ -776,6 +776,53 @@ export interface TradeDocumentLine {
   grossWeight: number | null; // 폼 직접 입력, 프리필=선적 라인 G.W.(R1)
 }
 
+/* ---------- 적입 스냅샷 (P5.3) ---------- */
+
+/**
+ * 스냅샷된 배분 1건 — 소프트 포인터(shipmentLineId) + 값 복사.
+ * 라이브 배분 행은 전량교체·cascade 대상이라 id 를 남기지 않는다(P5.2 무참조 리프).
+ */
+export interface TradeDocumentContainerAllocation {
+  shipmentLineId: string | null;
+  allocatedPackageCount: number | null;
+}
+
+/**
+ * 스냅샷된 컨테이너 1행 — 실측 4필드는 **원문 그대로**, 수치는 발행 시점 서버가
+ * 계산해 **동결**한 값이다(인쇄는 계산 0·읽기만 한다).
+ * 불완전 플래그 키명은 `containerMetrics` 출력과 정렬한다(G.W./CBM 별도 판정).
+ */
+export interface TradeDocumentContainer {
+  containerNo: string | null;
+  containerType: string | null;
+  sealNo: string | null;
+  vgmKg: number | null;
+  allocations: TradeDocumentContainerAllocation[];
+  packageCount: number | null;
+  grossWeightKg: number | null;
+  cbm: number | null;
+  gwIncomplete: boolean;
+  cbmIncomplete: boolean;
+}
+
+/** 스냅샷 전체 총계 — 컨테이너 동결값의 합·플래그 OR. */
+export interface TradeDocumentContainerTotals {
+  packageCount: number | null;
+  grossWeightKg: number | null;
+  cbm: number | null;
+  gwIncomplete: boolean;
+  cbmIncomplete: boolean;
+}
+
+/**
+ * `trade_documents.containers_snapshot` 매핑 결과.
+ * **null 은 이 타입이 아니다** — 서비스가 `null`(= P5.3 이전 발행)과 구분해서 준다.
+ */
+export interface TradeDocumentContainersSnapshot {
+  containers: TradeDocumentContainer[];
+  totals: TradeDocumentContainerTotals | null;
+}
+
 /** 포장 스냅샷 1행 — R-정정: "이 문서에 포함된 라인"의 S/I 스칼라만으로 구성. */
 export interface TradeDocumentPackage {
   shipmentLineId: string | null;
