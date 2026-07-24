@@ -408,14 +408,29 @@ where d.status = 'issued' and s.status = 'cancelled'
 
 union all
 
--- ── ㉱ 적입 스냅샷 자기일관: totals.packageCount ≠ Σ컨테이너.packageCount (P5.3) ─
---  발행 스냅샷은 동결 수치다 — 총계와 컨테이너 합이 어긋나면 스냅샷 생성 로직이
---  깨졌거나 저장 후 누가 jsonb 를 손댄 것이다. packageCount 는 정수라 정확 비교한다.
---  (G.W./CBM 은 6자리 정밀 동결값이라 같은 성질이나, 정수 축으로 대표 검산한다.)
+-- ── ㉱ 적입 스냅샷 자기일관 (P5.3) ─────────────────────────────────────────
+--  발행 스냅샷은 동결 수치다 — 자기일관이 깨지면 스냅샷 생성 로직이 잘못됐거나
+--  저장 후 누가 jsonb 를 손댄 것이다. packageCount 는 정수라 정확 비교한다.
+--  두 축을 본다(둘 다 스냅샷 내부만으로 재검산 가능 — G.W./CBM 은 라인 원값이
+--  스냅샷에 없어 재검산 불가라 제외, 적대검증 반영):
+--   (a) 컨테이너 packageCount = Σ 그 컨테이너 배분.allocatedPackageCount
+--   (b) totals.packageCount   = Σ 컨테이너.packageCount
 select
-  '㉱ 적입 스냅샷 총계 자기일관',
+  '㉱ 적입 스냅샷 자기일관',
   case when count(*) = 0 then '정상' else '⚠️ ' || count(*) || '건' end
 from (
+  -- (a) 컨테이너 내부: packageCount ↔ 배분합
+  select d.id
+  from public.trade_documents d
+  cross join lateral jsonb_array_elements(d.containers_snapshot->'containers') c
+  where d.containers_snapshot is not null
+    and jsonb_typeof(d.containers_snapshot->'containers') = 'array'
+    and (c->>'packageCount')::numeric
+        is distinct from
+        (select coalesce(sum((a->>'allocatedPackageCount')::numeric), 0)
+           from jsonb_array_elements(coalesce(c->'allocations', '[]'::jsonb)) a)
+  union all
+  -- (b) 총계 ↔ Σ컨테이너
   select d.id
   from public.trade_documents d
   where d.containers_snapshot is not null

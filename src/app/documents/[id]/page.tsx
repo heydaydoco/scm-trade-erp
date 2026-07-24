@@ -2,10 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge, type BadgeVariant } from "@/components/Badge";
-import {
-  documentContainerNoLabel,
-  getTradeDocument,
-} from "@/services/tradeDocuments";
+import { docContainerNoLabel, getTradeDocument } from "@/services/tradeDocuments";
 import { CURRENCY_SYMBOL } from "@/services/codes";
 import { flowHref } from "@/services/chainLogic";
 import { CancelDocumentButton } from "./CancelDocumentButton";
@@ -98,13 +95,8 @@ export default async function TradeDocumentDetailPage({
     },
   ];
 
-  // Container No.(P5.3 판정 ②·D9) — 인쇄(ShipmentInfoGrid)와 **같은 규칙**을 쓴다.
-  const containerNoLabel = documentContainerNoLabel(
-    doc.containersSnapshot === null
-      ? null
-      : doc.containersSnapshot.containers.map((c) => c.containerNo),
-    doc.containerNo,
-  );
+  // Container No.(P5.3 판정 ②·D9) — 인쇄(ShipmentInfoGrid)와 **같은 헬퍼**를 쓴다.
+  const containerNoLabel = docContainerNoLabel(doc);
   const shipInfo: [string, string | null][] = [
     ["선적번호(스냅샷)", doc.shipmentNo],
     ["운송", doc.transport],

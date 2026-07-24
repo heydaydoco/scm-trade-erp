@@ -1,6 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { todayKst } from "@/lib/date";
 import { SELLER } from "@/config/company";
+// 재수출(아래 export {…} from "./tradeDocLogic")과 별개로 로컬 사용을 위해 import 한다.
+import { documentContainerNoLabel } from "./tradeDocLogic";
 import type {
   IssuableLine,
   TradeDocument,
@@ -397,6 +399,22 @@ export async function listTradeDocumentsForShipment(
 
   if (error) throw new Error(`선적 무역서류 조회 실패: ${error.message}`);
   return ((data ?? []) as unknown as TdListRow[]).map(mapListItem);
+}
+
+/**
+ * 무역서류 헤더의 `Container No.` 표시값 — **소비처(CI·PL 인쇄·무역서류 상세)의
+ * 단일 진입점**이다. 스냅샷 3상태 → containerNo[] 어댑터를 여기 한 곳에 둔다
+ * (`documentContainerNoLabel` 이 규칙, 이 함수가 doc→인자 접기). 적대검증 nit 반영.
+ */
+export function docContainerNoLabel(
+  doc: Pick<TradeDocument, "containersSnapshot" | "containerNo">,
+): string | null {
+  return documentContainerNoLabel(
+    doc.containersSnapshot === null
+      ? null
+      : doc.containersSnapshot.containers.map((c) => c.containerNo),
+    doc.containerNo,
+  );
 }
 
 /** 무역서류 1건 (헤더 스냅샷 + 라인 스냅샷) — CI·PL 인쇄는 이 반환값만 본다. */
