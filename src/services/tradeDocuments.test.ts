@@ -39,6 +39,7 @@ describe("mapContainers — 정상 스냅샷 매핑", () => {
         containerNo: "MSKU1234567",
         containerType: "20GP",
         sealNo: "SL-001",
+        // vgmKg 키가 구 스냅샷에 남아 있어도 매퍼가 조용히 버려야 한다(P5.3 §4).
         vgmKg: "12345.5",
         allocations: [
           { shipmentLineId: "L1", allocatedPackageCount: 6 },
@@ -46,9 +47,9 @@ describe("mapContainers — 정상 스냅샷 매핑", () => {
         ],
         packageCount: 8,
         grossWeightKg: "60",
-        cbm: 3,
         gwIncomplete: false,
         cbmIncomplete: true,
+        cbm: 3,
       },
     ],
     totals: {
@@ -60,14 +61,14 @@ describe("mapContainers — 정상 스냅샷 매핑", () => {
     },
   };
 
-  it("★실측 4필드 + 동결 수치 + 배분을 그대로 옮긴다", () => {
+  it("★실측 3필드 + 동결 수치 + 배분을 그대로 옮긴다 (VGM 은 버린다 — §4)", () => {
     const r = mapContainers(RAW)!;
     expect(r.containers).toHaveLength(1);
+    // 개정 2호: 기대 객체에서 vgmKg 제거 — 매퍼가 구 스냅샷의 vgmKg 키를 버린다.
     expect(r.containers[0]).toEqual({
       containerNo: "MSKU1234567",
       containerType: "20GP",
       sealNo: "SL-001",
-      vgmKg: 12345.5,
       allocations: [
         { shipmentLineId: "L1", allocatedPackageCount: 6 },
         { shipmentLineId: "L2", allocatedPackageCount: 2 },
@@ -78,6 +79,7 @@ describe("mapContainers — 정상 스냅샷 매핑", () => {
       gwIncomplete: false,
       cbmIncomplete: true,
     });
+    expect(r.containers[0]).not.toHaveProperty("vgmKg");
   });
 
   it("★totals 도 같은 규약으로(숫자 문자열 → number)", () => {
@@ -111,11 +113,11 @@ describe("mapContainers — 안전 생략 계약(던지지 않는다)", () => {
 
   it("★컨테이너 키가 전부 결손이어도 행은 살아난다(전 필드 null·배분 빈 배열)", () => {
     const r = mapContainers({ containers: [{}] })!;
+    // 개정 2호: vgmKg 없음 — 매퍼가 이 키를 산출하지 않는다.
     expect(r.containers[0]).toEqual({
       containerNo: null,
       containerType: null,
       sealNo: null,
-      vgmKg: null,
       allocations: [],
       packageCount: null,
       grossWeightKg: null,
@@ -144,9 +146,9 @@ describe("mapContainers — 안전 생략 계약(던지지 않는다)", () => {
 
   it("★숫자로 해석 불가한 값은 null 로 — NaN 을 인쇄에 흘리지 않는다", () => {
     const r = mapContainers({
-      containers: [{ vgmKg: "열두톤", packageCount: {}, cbm: "3.5" }],
+      containers: [{ grossWeightKg: "열두톤", packageCount: {}, cbm: "3.5" }],
     })!;
-    expect(r.containers[0].vgmKg).toBeNull();
+    expect(r.containers[0].grossWeightKg).toBeNull();
     expect(r.containers[0].packageCount).toBeNull();
     expect(r.containers[0].cbm).toBe(3.5);
   });

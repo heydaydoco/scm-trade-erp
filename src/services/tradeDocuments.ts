@@ -242,10 +242,11 @@ export function mapContainers(
       });
     }
     containers.push({
+      // VGM 은 매핑하지 않는다(P5.3 §4) — 스냅샷에 없어야 정상이고, 구(舊) 스냅샷에
+      // vgmKg 키가 남아 있어도 여기서 조용히 버린다(여분 키 무시).
       containerNo: snapStr(c.containerNo),
       containerType: snapStr(c.containerType),
       sealNo: snapStr(c.sealNo),
-      vgmKg: snapNum(c.vgmKg),
       allocations,
       packageCount: snapNum(c.packageCount),
       grossWeightKg: snapNum(c.grossWeightKg),

@@ -788,15 +788,18 @@ export interface TradeDocumentContainerAllocation {
 }
 
 /**
- * 스냅샷된 컨테이너 1행 — 실측 4필드는 **원문 그대로**, 수치는 발행 시점 서버가
- * 계산해 **동결**한 값이다(인쇄는 계산 0·읽기만 한다).
+ * 스냅샷된 컨테이너 1행 — 실측 **3필드**(번호·타입·씰)는 **원문 그대로**, 수치는
+ * 발행 시점 서버가 계산해 **동결**한 값이다(인쇄는 계산 0·읽기만 한다).
  * 불완전 플래그 키명은 `containerMetrics` 출력과 정렬한다(G.W./CBM 별도 판정).
+ *
+ * ⚠️ VGM 은 담지 않는다(P5.3 §4 판정·개정 2호). 컨테이너 총질량은 공동적입 시 타
+ *    고객 물량 합산 정량이라 고객 문서에 실으면 유출이다 — 인쇄만 숨기지 않고
+ *    데이터 층에서 뺀다. VGM 의 자리는 S/I 다([[feedback-no-vgm-customer-docs]]).
  */
 export interface TradeDocumentContainer {
   containerNo: string | null;
   containerType: string | null;
   sealNo: string | null;
-  vgmKg: number | null;
   allocations: TradeDocumentContainerAllocation[];
   packageCount: number | null;
   grossWeightKg: number | null;

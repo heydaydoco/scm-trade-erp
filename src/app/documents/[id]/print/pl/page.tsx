@@ -191,9 +191,12 @@ export default async function PackingListPrintPage({
       </div>
 
       {/* ---------- CONTAINERS (적입 — P5.3 스냅샷). 0건이면 섹션 생략(S/I 선례). ----------
-          컬럼 구성은 S/I CONTAINERS 동형(D10). 수치는 발행 시점 동결값을 **그대로**
-          인쇄한다 — 여기서 재계산하지 않는다. 별표(*)는 G.W./CBM 을 따로 판정한
-          동결 플래그를 그대로 표시한다(S/I 와 같은 의미론). */}
+          컬럼 = 번호·타입·씰 + 파생 수치(Packages·G.W.·CBM). 수치는 발행 시점
+          동결값을 **그대로** 인쇄한다(재계산 없음). 별표(*)는 G.W./CBM 을 따로 판정한
+          동결 플래그다.
+          ⚠️ VGM 열 없음(P5.3 §4·개정 2호) — 컨테이너 총질량은 공동적입 시 타 고객
+             물량 합산 정량이라 고객 문서에서 전면 제외한다(데이터 층부터). VGM 은
+             S/I 소관이다. */}
       {snapshotContainers.length > 0 && (
         <div className={`${styles.avoidBreak} mt-8`}>
           <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -202,14 +205,13 @@ export default async function PackingListPrintPage({
           <table className={`${styles.docTable} w-full border-collapse text-sm`}>
             <thead>
               <tr className="border-b-2 border-blue-800 text-left text-[11px] uppercase tracking-wide text-zinc-500">
-                <th className="py-2 pr-2" style={{ width: "5%" }}>No.</th>
-                <th className="py-2 pr-2" style={{ width: "22%" }}>Container No.</th>
-                <th className="py-2 pr-2" style={{ width: "11%" }}>Type</th>
-                <th className="py-2 pr-2" style={{ width: "16%" }}>Seal No.</th>
-                <th className="py-2 pr-2 text-right" style={{ width: "10%" }}>Packages</th>
+                <th className="py-2 pr-2" style={{ width: "6%" }}>No.</th>
+                <th className="py-2 pr-2" style={{ width: "26%" }}>Container No.</th>
+                <th className="py-2 pr-2" style={{ width: "13%" }}>Type</th>
+                <th className="py-2 pr-2" style={{ width: "19%" }}>Seal No.</th>
+                <th className="py-2 pr-2 text-right" style={{ width: "12%" }}>Packages</th>
                 <th className="py-2 pr-2 text-right" style={{ width: "12%" }}>G.W. (kg)</th>
-                <th className="py-2 pr-2 text-right" style={{ width: "12%" }}>CBM</th>
-                <th className="py-2 text-right" style={{ width: "12%" }}>VGM (kg)</th>
+                <th className="py-2 text-right" style={{ width: "12%" }}>CBM</th>
               </tr>
             </thead>
             <tbody>
@@ -233,13 +235,10 @@ export default async function PackingListPrintPage({
                         ? `${fmt(c.grossWeightKg)}${c.gwIncomplete ? "*" : ""}`
                         : "-"}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums">
+                    <td className="py-2 text-right tabular-nums">
                       {allocated && c.cbm !== null
                         ? `${fmt(c.cbm)}${c.cbmIncomplete ? "*" : ""}`
                         : "-"}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {c.vgmKg !== null ? fmt(c.vgmKg) : "-"}
                     </td>
                   </tr>
                 );
@@ -259,14 +258,11 @@ export default async function PackingListPrintPage({
                       ? `${fmt(ctnTotals.grossWeightKg)}${ctnTotals.gwIncomplete ? "*" : ""}`
                       : "-"}
                   </td>
-                  <td className="py-2 pr-2 text-right tabular-nums">
+                  <td className="py-2 text-right tabular-nums">
                     {ctnTotals.cbm !== null
                       ? `${fmt(ctnTotals.cbm)}${ctnTotals.cbmIncomplete ? "*" : ""}`
                       : "-"}
                   </td>
-                  {/* VGM 총계는 스냅샷 totals 에 없다 — 입력값이라 파생 합의 대상이
-                      아니다(S/I 는 라이브 합을 냈지만 스냅샷은 컨테이너별 값만 동결). */}
-                  <td className="py-2 text-right tabular-nums">-</td>
                 </tr>
               </tfoot>
             )}
@@ -275,8 +271,7 @@ export default async function PackingListPrintPage({
             * Packages are the allocated package counts as entered. G.W. and CBM per
             container are prorated from the packed cargo lines by allocated package
             count; lines without package count, weight or volume are excluded from
-            that share (marked *). VGM is a declared value and is not derived from the
-            figures above. These figures are a snapshot frozen at issuance.
+            that share (marked *). These figures are a snapshot frozen at issuance.
           </p>
         </div>
       )}
