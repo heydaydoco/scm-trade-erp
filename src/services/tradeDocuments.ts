@@ -30,6 +30,7 @@ import type {
 export {
   allocateDiscounts,
   discountEntriesOf,
+  documentContainerNoLabel,
   issuableCombos,
   lineAmount,
   linesForCombo,
@@ -117,6 +118,7 @@ interface TdRow {
   booking_no: string | null;
   container_no: string | null;
   packages_snapshot: unknown;
+  containers_snapshot: unknown;
   subtotal_amount: number | string;
   discount_amount: number | string;
   total_amount: number | string;
@@ -139,7 +141,7 @@ const TD_COLUMNS =
   "buyer_name, buyer_address, buyer_city, buyer_country, buyer_contact_name, buyer_email, buyer_phone, " +
   "consignee_name, consignee_address, consignee_contact, notify_name, notify_address, notify_contact, " +
   "shipping_marks, shipment_no, transport, vessel_voyage, pol, pod, carrier, bl_no, booking_no, container_no, " +
-  "packages_snapshot, subtotal_amount, discount_amount, total_amount, status, cancelled_at, cancel_reason, created_at, " +
+  "packages_snapshot, containers_snapshot, subtotal_amount, discount_amount, total_amount, status, cancelled_at, cancel_reason, created_at, " +
   "trade_document_lines(id, line_no, shipment_line_id, order_line_id, product_code, product_name, " +
   "description, hs_code, origin_country, qty, uom, unit_price, amount, net_weight, gross_weight)";
 
@@ -318,6 +320,7 @@ function mapDoc(row: TdRow): TradeDocument {
     bookingNo: row.booking_no,
     containerNo: row.container_no,
     packagesSnapshot: mapPackages(row.packages_snapshot),
+    containersSnapshot: mapContainers(row.containers_snapshot),
     subtotalAmount: num(row.subtotal_amount),
     discountAmount: num(row.discount_amount),
     totalAmount: num(row.total_amount),

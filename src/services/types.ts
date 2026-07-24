@@ -888,6 +888,9 @@ export interface TradeDocument {
   bookingNo: string | null;
   containerNo: string | null;
   packagesSnapshot: TradeDocumentPackage[];
+  // 적입 스냅샷(P5.3) — null 은 **P5.3 이전 발행**(헤더는 container_no 스칼라 폴백).
+  // 빈 구조는 '적입 스코프 0건'. 인쇄·상세는 이 값만 소비한다(라이브 재조회 0).
+  containersSnapshot: TradeDocumentContainersSnapshot | null;
   subtotalAmount: number;
   discountAmount: number; // D3 비례 배분 합 (0이면 인쇄에서 행 생략)
   totalAmount: number;
